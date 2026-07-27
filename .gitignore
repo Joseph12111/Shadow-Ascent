@@ -1,0 +1,69 @@
+supabase/.temp/
+
+# dependencies
+node_modules/
+.pnpm-store/
+
+# env files
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+.envrc
+
+# build output
+dist/
+build/
+.next/
+out/
+coverage/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+logs/
+
+# system files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# local Codex/agent skills
+.agents/
+.git-upload/
+
+# caches
+.cache/
+.parcel-cache/
+.turbo/
+.vite/
+node_modules/.vite/
+src/types/supabase.ts????????
+
+# deployment local state
+.vercel/
+.netlify/
+
+# local/private
+*.pem
+*.key
+*.crt
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+service-account*.json
+*service-account*.json
+credentials.json
+*credentials*.json
+secrets.json
+*secrets*.json
+token.json
+*token*.json
