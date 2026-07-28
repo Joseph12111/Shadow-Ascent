@@ -10,10 +10,14 @@ import PageSkeleton from './components/ui/PageSkeleton.jsx';
 import RankUpCelebrationModal from './components/features/RankUpCelebrationModal.jsx';
 import WelcomeOpening from './components/features/WelcomeOpening.jsx';
 import NotificationScheduler from './components/features/NotificationScheduler.jsx';
+import FeedbackButton from './components/features/FeedbackButton.jsx';
+import BetaBadge from './components/ui/BetaBadge.jsx';
 import { markWelcomeOpeningSeen, shouldShowWelcomeOpening } from './utils/welcomeOpening.js';
+import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
+import Onboarding from './pages/Onboarding.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Quests from './pages/Quests.jsx';
 import Workout from './pages/Workout.jsx';
@@ -145,11 +149,18 @@ export default function App() {
   const { user, profile, loading, error } = useAuth();
   const location = useLocation();
   const authRoutes = ['/login', '/signup', '/reset-password'];
-  const publicRoutes = [...authRoutes, '/subscription', '/privacy-policy'];
+  const publicRoutes = ['/', ...authRoutes, '/subscription', '/privacy-policy'];
+  const isLandingRoute = location?.pathname === '/';
+  const isOnboardingRoute = location?.pathname === '/onboarding';
   const isAuthRoute = authRoutes.includes(location?.pathname);
   const isPublicRoute = publicRoutes.includes(location?.pathname);
+  const needsOnboarding = Boolean(user?.id) && profile?.onboarding_completed === false;
   const requestedPath = typeof location?.state?.from === 'string' ? location?.state?.from : '';
-  const postAuthDestination = requestedPath?.startsWith('/') && !authRoutes.includes(requestedPath) ? requestedPath : '/dashboard';
+  const postAuthDestination = needsOnboarding
+    ? '/onboarding'
+    : requestedPath?.startsWith('/') && !authRoutes.includes(requestedPath) && requestedPath !== '/'
+      ? requestedPath
+      : '/dashboard';
   const [rankUpOpen, setRankUpOpen] = useState(false);
   const [rankUpData, setRankUpData] = useState(null);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
@@ -185,12 +196,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (loading || isAuthRoute || !user?.id) {
+    if (loading || isAuthRoute || isLandingRoute || isOnboardingRoute || !user?.id) {
       return;
     }
 
     setWelcomeOpen(shouldShowWelcomeOpening(user));
-  }, [isAuthRoute, loading, user]);
+  }, [isAuthRoute, isLandingRoute, isOnboardingRoute, loading, user]);
 
   function finishWelcomeOpening() {
     markWelcomeOpeningSeen(user);
@@ -210,8 +221,24 @@ export default function App() {
     return <Navigate replace state={{ from: location?.pathname || '/' }} to="/login" />;
   }
 
+  if (user?.id && isLandingRoute) {
+    return <Navigate replace to={needsOnboarding ? '/onboarding' : '/dashboard'} />;
+  }
+
   if (user?.id && ['/login', '/signup'].includes(location?.pathname)) {
     return <Navigate replace to={postAuthDestination} />;
+  }
+
+  if (needsOnboarding && !isOnboardingRoute) {
+    return <Navigate replace to="/onboarding" />;
+  }
+
+  if (user?.id && !needsOnboarding && isOnboardingRoute) {
+    return <Navigate replace to="/dashboard" />;
+  }
+
+  if (isLandingRoute) {
+    return <Landing />;
   }
 
   return (
@@ -228,6 +255,10 @@ export default function App() {
             <Route element={<Login />} path="*" />
           </Routes>
         </main>
+      ) : isOnboardingRoute ? (
+        <main className="relative z-10 flex min-h-screen w-full items-center px-5 py-8 sm:px-8">
+          <Onboarding />
+        </main>
       ) : (
         <>
           <div className="relative z-10 flex min-h-screen">
@@ -241,9 +272,7 @@ export default function App() {
                   <AppLogo className="h-11 w-11" />
                   <span className="font-heading text-xl font-bold text-shadow-gold">Shadow Ascent</span>
                 </Link>
-                <span className="rounded-full border border-shadow-purple/30 bg-shadow-secondary/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-shadow-purpleLight">
-                  Final Touches
-                </span>
+                <BetaBadge />
               </header>
 
               <main className="mx-auto flex w-full max-w-6xl px-5 pb-10 pt-8 sm:px-8 sm:pt-14 lg:pt-8">
@@ -275,6 +304,7 @@ export default function App() {
             </div>
           </div>
           <BottomNav error={error} loading={loading} />
+          <FeedbackButton />
         </>
       )}
 
@@ -287,9 +317,9 @@ export default function App() {
         </nav>
       )}
 
-      <RankUpCelebrationModal onClose={() => setRankUpOpen(false)} open={!isAuthRoute && rankUpOpen} rankUpData={rankUpData} />
-      <WelcomeOpening displayName={profile?.display_name || user?.email || 'Ascendant'} onFinish={finishWelcomeOpening} open={!isAuthRoute && welcomeOpen} />
-      {!isAuthRoute ? <NotificationScheduler /> : null}
+      <RankUpCelebrationModal onClose={() => setRankUpOpen(false)} open={!isAuthRoute && !isOnboardingRoute && rankUpOpen} rankUpData={rankUpData} />
+      <WelcomeOpening displayName={profile?.display_name || user?.email || 'Ascendant'} onFinish={finishWelcomeOpening} open={!isAuthRoute && !isOnboardingRoute && welcomeOpen} />
+      {!isAuthRoute && !isOnboardingRoute ? <NotificationScheduler /> : null}
     </div>
   );
 }

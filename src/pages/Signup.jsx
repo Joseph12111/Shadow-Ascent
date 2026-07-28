@@ -52,7 +52,7 @@ export default function Signup() {
 
   useEffect(() => {
     if (user?.id) {
-      navigate('/dashboard', { replace: true });
+      navigate('/onboarding', { replace: true });
     }
   }, [navigate, user?.id]);
 
@@ -123,7 +123,7 @@ export default function Signup() {
       id: result?.data?.user?.id || '',
       email: result?.data?.user?.email || form?.email?.trim(),
     });
-    navigate('/dashboard', { replace: true });
+    navigate('/onboarding', { replace: true });
   }
 
   return (

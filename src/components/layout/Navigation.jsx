@@ -1,5 +1,6 @@
 import AppLogo from './AppLogo.jsx';
 import BurgerMenu from './BurgerMenu.jsx';
+import BetaBadge from '../ui/BetaBadge.jsx';
 
 export default function Navigation({ profile = null, loading = false, error = null, empty = false }) {
   const displayName = profile?.display_name || profile?.email || 'Ascendant';
@@ -23,7 +24,10 @@ export default function Navigation({ profile = null, loading = false, error = nu
           <AppLogo className="h-11 w-11" />
           <div>
             <p className="font-heading text-lg font-bold text-shadow-gold">Shadow Ascent</p>
-            <p className="max-w-[10rem] truncate text-[0.65rem] font-semibold tracking-[0.14em] text-shadow-textMuted">{displayName}</p>
+            <div className="mt-0.5 flex max-w-[11rem] items-center gap-2">
+              <p className="min-w-0 truncate text-[0.65rem] font-semibold text-shadow-textMuted">{displayName}</p>
+              <BetaBadge compact className="shrink-0" />
+            </div>
           </div>
         </div>
         <BurgerMenu />

@@ -265,6 +265,12 @@ function createDefaultProfile(authUser) {
     xp: 0,
     gold: 0,
     total_rp: 0,
+    onboarding_goal: '',
+    fitness_level: '',
+    main_objective: '',
+    weekly_training_days: null,
+    onboarding_completed: false,
+    onboarding_completed_at: null,
     created_at: now,
     updated_at: now,
   };
