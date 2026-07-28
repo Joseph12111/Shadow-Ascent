@@ -337,7 +337,7 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
 
       <section className="grid gap-5 sm:grid-cols-3">
         <StatBadge icon={ScanLine} label="Saved Scans" value={history?.length} />
-        <StatBadge icon={ImagePlus} label="Image" tone="purple" value={imageName || 'None'} />
+        <StatBadge icon={ImagePlus} label="Image" tone="purple" value={imageName || 'None'} valueClassName="break-words leading-6" />
         <StatBadge icon={Sparkles} label="Mode" value="Vision" />
       </section>
 

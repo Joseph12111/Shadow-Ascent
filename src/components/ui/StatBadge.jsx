@@ -1,4 +1,4 @@
-export default function StatBadge({ icon: Icon, label, value, tone = 'gold', loading = false, error = null, empty = false }) {
+export default function StatBadge({ icon: Icon, label, value, tone = 'gold', loading = false, error = null, empty = false, valueClassName = 'truncate' }) {
   const toneClass = tone === 'purple' ? 'border-shadow-purple/30 text-shadow-purpleLight' : 'border-shadow-gold/30 text-shadow-gold';
 
   if (loading) {
@@ -18,7 +18,7 @@ export default function StatBadge({ icon: Icon, label, value, tone = 'gold', loa
       {Icon ? <Icon className="h-5 w-5 shrink-0" aria-hidden="true" /> : null}
       <div className="min-w-0">
         <p className="truncate text-xs uppercase tracking-[0.18em] text-shadow-textMuted">{label}</p>
-        <p className="truncate text-lg font-bold text-shadow-text">{value}</p>
+        <p className={`${valueClassName} text-lg font-bold text-shadow-text`}>{value}</p>
       </div>
     </div>
   );
