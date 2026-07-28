@@ -56,7 +56,7 @@ export default function Login() {
 
   useEffect(() => {
     if (user?.id) {
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [navigate, user?.id]);
 
@@ -107,7 +107,7 @@ export default function Login() {
     }
 
     toast?.success?.('You are back in the ascent.');
-    navigate('/', { replace: true });
+    navigate('/dashboard', { replace: true });
   }
 
   async function handleRecoverySubmit(event) {

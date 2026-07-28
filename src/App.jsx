@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ShieldCheck, Sparkles } from 'lucide-react';
 import { useAuth } from './hooks/useAuth.js';
 import AppLogo from './components/layout/AppLogo.jsx';
@@ -126,11 +126,28 @@ function InfoRow({ label, value }) {
   );
 }
 
+function AuthSessionLoading() {
+  return (
+    <div className="relative z-10 flex min-h-screen items-center justify-center px-5">
+      <section className="glass-card flex w-full max-w-sm flex-col items-center gap-5 p-8 text-center" aria-live="polite" role="status">
+        <AppLogo className="h-16 w-16" />
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-shadow-gold border-t-transparent shadow-goldGlow" />
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-shadow-gold">Shadow Ascent</h1>
+          <p className="mt-2 text-sm text-shadow-textSecondary">Restoring your session...</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const { user, profile, loading, error } = useAuth();
   const location = useLocation();
   const authRoutes = ['/login', '/signup', '/reset-password'];
+  const publicRoutes = [...authRoutes, '/subscription', '/privacy-policy'];
   const isAuthRoute = authRoutes.includes(location?.pathname);
+  const isPublicRoute = publicRoutes.includes(location?.pathname);
   const [rankUpOpen, setRankUpOpen] = useState(false);
   const [rankUpData, setRankUpData] = useState(null);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
@@ -178,6 +195,23 @@ export default function App() {
     setWelcomeOpen(false);
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-shadow-primary text-shadow-text">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.24),transparent_34%),radial-gradient(circle_at_78%_8%,rgba(240,192,64,0.16),transparent_30%),linear-gradient(180deg,rgba(10,10,15,0),#0a0a0f_72%)]" />
+        <AuthSessionLoading />
+      </div>
+    );
+  }
+
+  if (!user?.id && !isPublicRoute) {
+    return <Navigate replace state={{ from: location?.pathname || '/' }} to="/login" />;
+  }
+
+  if (user?.id && ['/login', '/signup'].includes(location?.pathname)) {
+    return <Navigate replace to="/dashboard" />;
+  }
+
   return (
     <div className="min-h-screen bg-shadow-primary text-shadow-text">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.24),transparent_34%),radial-gradient(circle_at_78%_8%,rgba(240,192,64,0.16),transparent_30%),linear-gradient(180deg,rgba(10,10,15,0),#0a0a0f_72%)]" />
@@ -215,7 +249,8 @@ export default function App() {
                   <PageSkeleton />
                 ) : (
                   <Routes>
-                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/" element={<Navigate replace to={user?.id ? '/dashboard' : '/login'} />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/quests" element={<Quests />} />
                     <Route path="/workout" element={<Workout />} />
                     <Route path="/workout-generator" element={<WorkoutGenerator />} />
@@ -231,7 +266,7 @@ export default function App() {
                     <Route path="/delete-account" element={<DeleteAccount />} />
                     <Route path="/calculators" element={<Calculators />} />
                     <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-                    <Route path="*" element={<Dashboard />} />
+                    <Route path="*" element={<Navigate replace to={user?.id ? '/dashboard' : '/login'} />} />
                   </Routes>
                 )}
               </main>
