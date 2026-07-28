@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChefHat, Sparkles, Utensils } from 'lucide-react';
+import { ChefHat, ChevronDown, Sparkles, Utensils } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
@@ -8,7 +8,7 @@ import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { syncFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
-import { callOpenAIResponse, Field, GeneratedOutput, HistoryPanel, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
+import { callOpenAIResponse, Field, GeneratedOutput, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
 
 const MEAL_PLANNER_HISTORY_KEY = 'shadowAscentMealPlannerHistory';
 const CALCULATOR_STORAGE_KEY = 'shadowAscentCalculatorData';
@@ -167,6 +167,7 @@ export default function MealPlanner() {
     const storedHistory = readJSON(MEAL_PLANNER_HISTORY_KEY, []);
     return Array.isArray(storedHistory) ? storedHistory : [];
   });
+  const [expandedHistory, setExpandedHistory] = useState({});
   const [generating, setGenerating] = useState(false);
   const [localError, setLocalError] = useState('');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -422,11 +423,88 @@ Return sections: overview, meals with ingredients, protein estimate, shopping li
 
       <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <GeneratedOutput empty={!result} text={result} title="Generated Meal Plan" />
-        <HistoryPanel history={history} title="Meal Plan History" />
+        <MealPlanHistoryPanel
+          expandedHistory={expandedHistory}
+          history={history}
+          onCollapseAll={() => setExpandedHistory({})}
+          onExpandAll={() =>
+            setExpandedHistory(
+              history?.reduce(
+                (expandedEntries, entry) => ({
+                  ...expandedEntries,
+                  [entry?.id]: true,
+                }),
+                {},
+              ) || {},
+            )
+          }
+          onToggle={(entryId) =>
+            setExpandedHistory((currentHistory) => ({
+              ...currentHistory,
+              [entryId]: !currentHistory?.[entryId],
+            }))
+          }
+        />
       </section>
 
       <UpgradeModal featureName="Meal Planner" onClose={() => setUpgradeOpen(false)} open={!owner && upgradeOpen} />
     </div>
+  );
+}
+
+function MealPlanHistoryPanel({ history, expandedHistory, onToggle, onExpandAll, onCollapseAll }) {
+  return (
+    <Card empty={!history?.length} emptyText="No saved generations yet." title="Meal Plan History">
+      <div className="mb-4 flex min-w-0 flex-wrap gap-2">
+        <Button className="max-w-full whitespace-normal text-center" onClick={onExpandAll} type="button" variant="ghost">
+          Expand All
+        </Button>
+        <Button className="max-w-full whitespace-normal text-center" onClick={onCollapseAll} type="button" variant="ghost">
+          Collapse All
+        </Button>
+      </div>
+
+      <div className="min-w-0 space-y-3">
+        {history?.map((entry) => {
+          const expanded = Boolean(expandedHistory?.[entry?.id]);
+          const preview = entry?.output?.slice(0, 180) || '';
+
+          return (
+            <article className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] p-4" key={entry?.id}>
+              <p className="break-words font-heading text-lg font-bold text-shadow-gold">
+                {entry?.input?.mealGoal || 'AI Result'}
+              </p>
+              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-shadow-textMuted">{entry?.createdAt?.slice(0, 10)}</p>
+
+              {!expanded ? (
+                <p className="mb-3 mt-3 break-words text-sm leading-6 text-shadow-textSecondary">
+                  {preview}
+                  {entry?.output?.length > 180 ? '...' : ''}
+                </p>
+              ) : null}
+
+              <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                <div className="min-h-0 overflow-hidden">
+                  <p className="max-w-full whitespace-pre-wrap break-words text-sm leading-6 text-shadow-textSecondary [overflow-wrap:anywhere]">{entry?.output}</p>
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <button
+                  aria-expanded={expanded}
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-shadow-purpleLight transition hover:text-shadow-gold"
+                  onClick={() => onToggle?.(entry?.id)}
+                  type="button"
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                  {expanded ? 'Hide' : 'Show All'}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
