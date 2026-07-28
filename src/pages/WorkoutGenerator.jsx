@@ -147,31 +147,12 @@ function writeJSON(key, value) {
   }
 }
 
-function getOpenAIConfig() {
-  return {
-    apiKey: import.meta.env?.VITE_OPENAI_API_KEY || '',
-    baseUrl: import.meta.env?.VITE_OPENAI_BASE_URL || 'https://api.openai.com/v1',
-    model: import.meta.env?.VITE_OPENAI_MODEL || 'gpt-5.5',
-  };
-}
-
-function extractResponseText(data) {
-  if (data?.output_text) {
-    return data?.output_text;
-  }
-
-  const parts = data?.output
-    ?.flatMap((item) => item?.content || [])
-    ?.map((content) => content?.text || content?.value || '')
-    ?.filter(Boolean);
-
-  return parts?.join('\n\n') || '';
+export function isAIServiceConfigured() {
+  return Boolean(supabase);
 }
 
 export async function callOpenAIResponse({ instructions, text, imageDataUrl }) {
-  const config = getOpenAIConfig();
-
-  if (!config?.apiKey) {
+  if (!isAIServiceConfigured()) {
     return {
       ok: false,
       text: '',
@@ -179,32 +160,16 @@ export async function callOpenAIResponse({ instructions, text, imageDataUrl }) {
     };
   }
 
-  const content = [{ type: 'input_text', text }];
-
-  if (imageDataUrl) {
-    content.push({ type: 'input_image', image_url: imageDataUrl });
-  }
-
   try {
-    const response = await fetch(`${config?.baseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config?.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config?.model,
+    const invocation = (await supabase?.functions?.invoke?.('ai-generate', {
+      body: {
         instructions,
-        input: [
-          {
-            role: 'user',
-            content,
-          },
-        ],
-      }),
-    });
+        text,
+        imageDataUrl: imageDataUrl || '',
+      },
+    })) || {};
 
-    if (!response?.ok) {
+    if (invocation?.error) {
       return {
         ok: false,
         text: '',
@@ -212,8 +177,7 @@ export async function callOpenAIResponse({ instructions, text, imageDataUrl }) {
       };
     }
 
-    const data = await response.json();
-    const outputText = extractResponseText(data);
+    const outputText = String(invocation?.data?.text || '');
 
     if (!outputText?.trim()) {
       return {
@@ -400,7 +364,7 @@ export default function WorkoutGenerator() {
   const [localError, setLocalError] = useState('');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [activeFormStep, setActiveFormStep] = useState('goal');
-  const empty = !getOpenAIConfig()?.apiKey;
+  const empty = !isAIServiceConfigured();
   const hasErrors = useMemo(() => Object.keys(formErrors || {})?.length > 0, [formErrors]);
   const activePlan = useMemo(() => {
     if (!savedPlans?.length || !selectedPlanId) {
@@ -892,7 +856,7 @@ Do not omit exercise details, coaching notes, progression rules, or recovery not
 
   return (
     <div className="min-w-0 w-full overflow-x-hidden space-y-6">
-      <Card empty={empty} emptyText="Add VITE_OPENAI_API_KEY to enable the workout generator." error={error} loading={loading} subtitle="Responses API text generation only." title="Workout Generator" icon={Dumbbell}>
+      <Card empty={empty} emptyText="Connect Supabase to enable the secure AI service." error={error} loading={loading} subtitle="Secure server-side Responses API generation." title="Workout Generator" icon={Dumbbell}>
         {!empty ? <UsageBanner feature="workoutGenerator" title="AI Training Forge" user={user} /> : null}
         {!empty && localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
         {!empty && hasErrors ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">Fix the highlighted fields to generate a plan.</div> : null}

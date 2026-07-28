@@ -7,7 +7,7 @@ import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { recordFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
-import { callOpenAIResponse, GeneratedOutput, HistoryPanel, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
+import { callOpenAIResponse, GeneratedOutput, HistoryPanel, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
 
 const MEAL_SCANNER_HISTORY_KEY = 'shadowAscentMealScannerHistory';
 
@@ -33,10 +33,6 @@ function fileToDataUrl(file) {
   });
 }
 
-function hasApiKey() {
-  return Boolean(import.meta.env?.VITE_OPENAI_API_KEY);
-}
-
 export default function MealScanner() {
   const { user, loading, error } = useAuth();
   const toast = useToast();
@@ -52,7 +48,7 @@ export default function MealScanner() {
   const [scanning, setScanning] = useState(false);
   const [localError, setLocalError] = useState('');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const empty = !hasApiKey();
+  const empty = !isAIServiceConfigured();
 
   useEffect(() => {
     if (owner && upgradeOpen) {
@@ -151,7 +147,7 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
 
   return (
     <div className="w-full space-y-6">
-      <Card empty={empty} emptyText="Add VITE_OPENAI_API_KEY to enable meal scanning." error={error} loading={loading} subtitle="Image input with daily free usage limits." title="Meal Scanner" icon={ScanLine}>
+      <Card empty={empty} emptyText="Connect Supabase to enable the secure AI service." error={error} loading={loading} subtitle="Secure image analysis with usage limits." title="Meal Scanner" icon={ScanLine}>
         {!empty ? <UsageBanner feature="mealScanner" title="Meal Vision Scan" user={user} /> : null}
         {!empty && localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
 

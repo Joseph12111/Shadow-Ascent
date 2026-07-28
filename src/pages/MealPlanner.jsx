@@ -8,7 +8,7 @@ import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { recordFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
-import { callOpenAIResponse, Field, GeneratedOutput, HistoryPanel, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
+import { callOpenAIResponse, Field, GeneratedOutput, HistoryPanel, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
 
 const MEAL_PLANNER_HISTORY_KEY = 'shadowAscentMealPlannerHistory';
 const CALCULATOR_STORAGE_KEY = 'shadowAscentCalculatorData';
@@ -68,10 +68,6 @@ function readJSON(key, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function hasApiKey() {
-  return Boolean(import.meta.env?.VITE_OPENAI_API_KEY);
 }
 
 function toNumber(value) {
@@ -174,7 +170,7 @@ export default function MealPlanner() {
   const [generating, setGenerating] = useState(false);
   const [localError, setLocalError] = useState('');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const empty = !hasApiKey();
+  const empty = !isAIServiceConfigured();
   const hasErrors = useMemo(() => Object.keys(formErrors || {})?.length > 0, [formErrors]);
 
   const calculatorData = useMemo(() => readCalculatorData(profile), [profile]);
@@ -296,7 +292,7 @@ Return sections: overview, meals with ingredients, protein estimate, shopping li
 
   return (
     <div className="w-full space-y-6">
-      <Card empty={empty} emptyText="Add VITE_OPENAI_API_KEY to enable the meal planner." error={error} loading={loading} subtitle="AI meal planning with daily free usage limits." title="Meal Planner" icon={ChefHat}>
+      <Card empty={empty} emptyText="Connect Supabase to enable the secure AI service." error={error} loading={loading} subtitle="Secure AI meal planning with usage limits." title="Meal Planner" icon={ChefHat}>
         {!empty ? <UsageBanner feature="mealPlanner" title="Nutrition Forge" user={user} /> : null}
         {!empty && localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
         {!empty && hasErrors ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">Fix the highlighted fields to generate a plan.</div> : null}
