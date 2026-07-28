@@ -5,7 +5,7 @@ import Card from '../components/ui/Card.jsx';
 import StatBadge from '../components/ui/StatBadge.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
-import { recordFeatureUsage } from '../utils/usageTracker.js';
+import { syncFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
 import { callOpenAIResponse, GeneratedOutput, HistoryPanel, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
 
@@ -22,12 +22,52 @@ function readJSON(key, fallback) {
 
 function fileToDataUrl(file) {
   return new Promise((resolve) => {
+    let objectUrl = '';
+
     try {
-      const reader = new FileReader();
-      reader.onload = () => resolve({ ok: true, dataUrl: String(reader?.result || '') });
-      reader.onerror = () => resolve({ ok: false, dataUrl: '' });
-      reader.readAsDataURL(file);
+      if (!file?.type?.startsWith?.('image/') || Number(file?.size || 0) > 12_000_000) {
+        resolve({ ok: false, dataUrl: '' });
+        return;
+      }
+
+      objectUrl = globalThis?.URL?.createObjectURL?.(file) || '';
+      const image = new globalThis.Image();
+
+      image.onload = () => {
+        try {
+          const maxDimension = 1400;
+          const scale = Math.min(1, maxDimension / Math.max(image?.naturalWidth || 1, image?.naturalHeight || 1));
+          const width = Math.max(1, Math.round((image?.naturalWidth || 1) * scale));
+          const height = Math.max(1, Math.round((image?.naturalHeight || 1) * scale));
+          const canvas = globalThis?.document?.createElement?.('canvas');
+          const context = canvas?.getContext?.('2d');
+
+          if (!canvas || !context) {
+            resolve({ ok: false, dataUrl: '' });
+            return;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          context.fillStyle = '#0a0a0f';
+          context?.fillRect?.(0, 0, width, height);
+          context?.drawImage?.(image, 0, 0, width, height);
+          const dataUrl = canvas?.toDataURL?.('image/jpeg', 0.82) || '';
+          resolve({ ok: Boolean(dataUrl && dataUrl?.length <= 3_500_000), dataUrl });
+        } catch {
+          resolve({ ok: false, dataUrl: '' });
+        } finally {
+          globalThis?.URL?.revokeObjectURL?.(objectUrl);
+        }
+      };
+
+      image.onerror = () => {
+        globalThis?.URL?.revokeObjectURL?.(objectUrl);
+        resolve({ ok: false, dataUrl: '' });
+      };
+      image.src = objectUrl;
     } catch {
+      globalThis?.URL?.revokeObjectURL?.(objectUrl);
       resolve({ ok: false, dataUrl: '' });
     }
   });
@@ -96,20 +136,10 @@ export default function MealScanner() {
       return;
     }
 
-    const usage = recordFeatureUsage('mealScanner', user);
-
-    if (!usage?.success) {
-      if (!usage?.owner && usage?.reason === 'limit_reached') {
-        setUpgradeOpen(true);
-      } else {
-        setLocalError(usage?.message || 'Usage could not be updated right now.');
-      }
-      return;
-    }
-
     setScanning(true);
     const response = await callOpenAIResponse({
-      instructions: 'You are a careful nutrition image assistant. Provide estimates and uncertainty. Do not claim medical certainty.',
+      endpoint: '/api/generate-meal',
+      mode: 'scanner',
       text: `Analyze this meal image for Shadow Ascent.
 User target: ${target || 'general nutrition scan'}
 
@@ -119,10 +149,14 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
     setScanning(false);
 
     if (!response?.ok) {
+      if (response?.code === 'usage_limit_reached') {
+        setUpgradeOpen(true);
+      }
       setLocalError(response?.message || 'Meal scan could not be completed.');
       return;
     }
 
+    syncFeatureUsage('mealScanner', response?.usage);
     const entry = {
       id: `meal-scan-${Date.now()}`,
       feature: 'mealScanner',

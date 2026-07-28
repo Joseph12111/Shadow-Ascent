@@ -148,6 +148,8 @@ export default function App() {
   const publicRoutes = [...authRoutes, '/subscription', '/privacy-policy'];
   const isAuthRoute = authRoutes.includes(location?.pathname);
   const isPublicRoute = publicRoutes.includes(location?.pathname);
+  const requestedPath = typeof location?.state?.from === 'string' ? location?.state?.from : '';
+  const postAuthDestination = requestedPath?.startsWith('/') && !authRoutes.includes(requestedPath) ? requestedPath : '/dashboard';
   const [rankUpOpen, setRankUpOpen] = useState(false);
   const [rankUpData, setRankUpData] = useState(null);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
@@ -209,7 +211,7 @@ export default function App() {
   }
 
   if (user?.id && ['/login', '/signup'].includes(location?.pathname)) {
-    return <Navigate replace to="/dashboard" />;
+    return <Navigate replace to={postAuthDestination} />;
   }
 
   return (

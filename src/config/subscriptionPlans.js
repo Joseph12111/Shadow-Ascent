@@ -3,8 +3,6 @@ export const BILLING_CYCLES = {
   annual: 'annual',
 };
 
-export const STRIPE_CUSTOMER_PORTAL_URL = import.meta.env?.VITE_STRIPE_CUSTOMER_PORTAL_URL || '';
-
 export const SUBSCRIPTION_PLANS = [
   {
     id: 'awakened',
@@ -35,12 +33,6 @@ export const SUBSCRIPTION_PLANS = [
     accent: 'purple',
     monthlyPrice: 4.99,
     annualPrice: 49.99,
-    stripe: {
-      monthlyPriceId: 'price_1TxsgaGgurzceHo5DtWP9u3U',
-      annualPriceId: 'price_1TxsgkGgurzceHo5bSCzuO2Z',
-      monthlyPaymentLink: 'https://buy.stripe.com/3cI14n85ibNUgKA7Nr3gk00',
-      annualPaymentLink: 'https://buy.stripe.com/fZu28r2KY4ls2TKaZD3gk01',
-    },
     badge: 'Starter',
     included: ['2 Workout Plans per month', '2 Meal Plans per month', '15 AI Meal Scans per month'],
     annualExtras: ['2 months free', 'Exclusive Hunter avatar title'],
@@ -53,12 +45,6 @@ export const SUBSCRIPTION_PLANS = [
     accent: 'purple',
     monthlyPrice: 9.99,
     annualPrice: 99.99,
-    stripe: {
-      monthlyPriceId: 'price_1TxsgwGgurzceHo5CgXcYFBd',
-      annualPriceId: 'price_1Txsh5GgurzceHo50NIrLHUP',
-      monthlyPaymentLink: 'https://buy.stripe.com/9B64gzadq3ho2TK8Rv3gk02',
-      annualPaymentLink: 'https://buy.stripe.com/7sY6oH85i4lsbqg5Fj3gk03',
-    },
     badge: 'Premium',
     included: ['4 Workout Plans per month', '4 Meal Plans per month', '30 AI Meal Scans per month'],
     annualExtras: ['2 months free', '(coming soon)', 'Purple Premium Aura', 'Exclusive equipment skins', 'Priority feature access'],
@@ -71,12 +57,6 @@ export const SUBSCRIPTION_PLANS = [
     accent: 'gold',
     monthlyPrice: 14.99,
     annualPrice: 149.99,
-    stripe: {
-      monthlyPriceId: 'price_1TxshGGgurzceHo5I6aBjFlQ',
-      annualPriceId: 'price_1TxshTGgurzceHo5POKO8LZe',
-      monthlyPaymentLink: 'https://buy.stripe.com/6oUfZhfxKaJQ7a09Vz3gk04',
-      annualPaymentLink: 'https://buy.stripe.com/aFadR9gBOf062TK1p33gk05',
-    },
     badge: 'Best Value',
     featured: true,
     included: ['4 Workout Plans per month', '4 Meal Plans per month', '110 AI Meal Scans per month'],

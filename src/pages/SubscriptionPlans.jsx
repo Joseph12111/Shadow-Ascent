@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BadgeCheck, Check, Crown, ExternalLink, Gem, Shield, Sparkles, Swords, Undo2, Zap } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
-import { BILLING_CYCLES, STRIPE_CUSTOMER_PORTAL_URL, SUBSCRIPTION_PLANS } from '../config/subscriptionPlans.js';
+import { BILLING_CYCLES, SUBSCRIPTION_PLANS } from '../config/subscriptionPlans.js';
+import { useAuth } from '../hooks/useAuth.js';
+import { useToast } from '../hooks/useToast.js';
+import { callAuthenticatedApi } from '../lib/apiClient.js';
 
 const accentClasses = {
   gold: {
@@ -41,13 +45,61 @@ function getPlanIcon(planId) {
 }
 
 export default function SubscriptionPlans() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
   const [billingCycle, setBillingCycle] = useState(BILLING_CYCLES?.monthly);
+  const [checkoutLoading, setCheckoutLoading] = useState('');
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [localError, setLocalError] = useState('');
   const loading = false;
   const error = null;
   const empty = !SUBSCRIPTION_PLANS?.length;
   const annualSelected = billingCycle === BILLING_CYCLES?.annual;
   const cycleLabel = annualSelected ? 'Annual' : 'Monthly';
   const plans = useMemo(() => SUBSCRIPTION_PLANS || [], []);
+
+  async function startCheckout(plan) {
+    if (!user?.id) {
+      navigate('/login', { replace: false, state: { from: '/subscription' } });
+      return;
+    }
+
+    setLocalError('');
+    setCheckoutLoading(plan?.id || '');
+    const result = await callAuthenticatedApi('/api/create-checkout-session', {
+      planId: plan?.id,
+      billingCycle,
+    }, { timeoutMs: 20_000 });
+    setCheckoutLoading('');
+
+    if (!result?.ok || !result?.data?.url) {
+      setLocalError(result?.message || 'Secure checkout is unavailable right now.');
+      return;
+    }
+
+    globalThis?.location?.assign?.(result?.data?.url);
+  }
+
+  async function openCustomerPortal() {
+    if (!user?.id) {
+      navigate('/login', { replace: false, state: { from: '/subscription' } });
+      return;
+    }
+
+    setLocalError('');
+    setPortalLoading(true);
+    const result = await callAuthenticatedApi('/api/create-portal-session', {}, { timeoutMs: 20_000 });
+    setPortalLoading(false);
+
+    if (!result?.ok || !result?.data?.url) {
+      setLocalError(result?.message || 'The Stripe customer portal is unavailable right now.');
+      return;
+    }
+
+    toast?.success?.('Opening your secure Stripe portal.');
+    globalThis?.location?.assign?.(result?.data?.url);
+  }
 
   return (
     <div className="w-full space-y-6">
@@ -95,9 +147,21 @@ export default function SubscriptionPlans() {
 
       <section className="grid gap-5 xl:grid-cols-4">
         {plans?.map((plan) => (
-          <PlanCard billingCycle={billingCycle} key={plan?.id} plan={plan} />
+          <PlanCard
+            billingCycle={billingCycle}
+            key={plan?.id}
+            loading={checkoutLoading === plan?.id}
+            onSubscribe={() => startCheckout(plan)}
+            plan={plan}
+          />
         ))}
       </section>
+
+      {localError ? (
+        <div className="rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">
+          {localError}
+        </div>
+      ) : null}
 
       <Card title="Pricing Recommendation" subtitle={`${cycleLabel} pricing shown in EUR. Stripe products can map directly to these plan IDs.`} icon={BadgeCheck}>
         <div className="overflow-x-auto">
@@ -131,17 +195,12 @@ export default function SubscriptionPlans() {
             <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">
               Subscription cancellation is handled by Stripe so your payment details stay protected. If you cancel, access stays active until the end of the paid billing period.
             </p>
-            {!STRIPE_CUSTOMER_PORTAL_URL ? (
-              <p className="mt-3 rounded-xl border border-shadow-gold/30 bg-shadow-gold/10 p-3 text-sm font-semibold text-shadow-textSecondary">
-                Add VITE_STRIPE_CUSTOMER_PORTAL_URL to enable the cancellation portal button.
-              </p>
-            ) : null}
           </div>
 
           <Button
             className="w-full lg:w-auto"
-            disabled={!STRIPE_CUSTOMER_PORTAL_URL}
-            onClick={() => globalThis?.location?.assign?.(STRIPE_CUSTOMER_PORTAL_URL)}
+            loading={portalLoading}
+            onClick={openCustomerPortal}
             variant="secondary"
           >
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -153,22 +212,13 @@ export default function SubscriptionPlans() {
   );
 }
 
-function PlanCard({ billingCycle, plan }) {
+function PlanCard({ billingCycle, loading, onSubscribe, plan }) {
   const annualSelected = billingCycle === BILLING_CYCLES?.annual;
   const price = annualSelected ? plan?.annualPrice : plan?.monthlyPrice;
   const AccentIcon = getPlanIcon(plan?.id);
   const classes = accentClasses?.[plan?.accent] || accentClasses?.purple;
   const features = annualSelected ? [...(plan?.included || []), ...(plan?.annualExtras || [])] : plan?.included || [];
-  const checkoutUrl = annualSelected ? plan?.stripe?.annualPaymentLink : plan?.stripe?.monthlyPaymentLink;
   const paidPlan = Number(price || 0) > 0;
-
-  function openStripeCheckout() {
-    if (!checkoutUrl) {
-      return;
-    }
-
-    globalThis?.location?.assign?.(checkoutUrl);
-  }
 
   return (
     <article
@@ -227,7 +277,7 @@ function PlanCard({ billingCycle, plan }) {
           })}
         </ul>
 
-        <Button className="mt-6 w-full" disabled={!paidPlan || (paidPlan && !checkoutUrl)} onClick={paidPlan ? openStripeCheckout : undefined} variant={plan?.featured ? 'primary' : 'secondary'}>
+        <Button className="mt-6 w-full" disabled={!paidPlan} loading={loading} onClick={paidPlan ? onSubscribe : undefined} variant={plan?.featured ? 'primary' : 'secondary'}>
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
           {paidPlan ? 'Subscribe with Stripe' : 'Free Plan Active'}
         </Button>

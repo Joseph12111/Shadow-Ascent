@@ -6,7 +6,8 @@ import Card from '../components/ui/Card.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
-import { signInWithPassword, signOutUser, supabase } from '../lib/supabase.js';
+import { callAuthenticatedApi } from '../lib/apiClient.js';
+import { signInWithPassword, signOutUser } from '../lib/supabase.js';
 
 const HOLD_DURATION_MS = 1800;
 const LOCAL_KEYS_TO_CLEAR = [
@@ -146,25 +147,18 @@ export default function DeleteAccount() {
   }
 
   async function deleteAccount() {
-    if (!passwordVerified || !user?.id || !supabase) {
+    if (!passwordVerified || !user?.id || !password) {
       setLocalError('Account deletion is not ready. Confirm your password first.');
       return;
     }
 
     setBusy(true);
     setLocalError('');
+    const result = await callAuthenticatedApi('/api/delete-account', { password }, { timeoutMs: 30_000 });
 
-    try {
-      const { error: rpcError } = await supabase.rpc('delete_own_account', { confirm_password: password });
-
-      if (rpcError) {
-        setBusy(false);
-        setLocalError('Account could not be deleted right now.');
-        return;
-      }
-    } catch {
+    if (!result?.ok) {
       setBusy(false);
-      setLocalError('Account could not be deleted right now.');
+      setLocalError(result?.message || 'Account could not be deleted right now.');
       return;
     }
 

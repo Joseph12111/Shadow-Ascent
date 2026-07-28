@@ -6,7 +6,7 @@ import Card from '../components/ui/Card.jsx';
 import StatBadge from '../components/ui/StatBadge.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
-import { recordFeatureUsage } from '../utils/usageTracker.js';
+import { syncFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
 import { callOpenAIResponse, Field, GeneratedOutput, HistoryPanel, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
 
@@ -224,17 +224,6 @@ export default function MealPlanner() {
       return;
     }
 
-    const usage = recordFeatureUsage('mealPlanner', user);
-
-    if (!usage?.success) {
-      if (!usage?.owner && usage?.reason === 'limit_reached') {
-        setUpgradeOpen(true);
-      } else {
-        setLocalError(usage?.message || 'Usage could not be updated right now.');
-      }
-      return;
-    }
-
     setGenerating(true);
 
     const selectedGoal = MEAL_GOALS.find((entry) => entry?.id === form?.mealGoal);
@@ -244,7 +233,8 @@ export default function MealPlanner() {
     const selectedActivity = ACTIVITY_OPTIONS.find((entry) => entry?.id === form?.activity);
 
     const response = await callOpenAIResponse({
-      instructions: 'You are a practical nutrition planner inside a fantasy RPG app. Provide general educational meal planning only, not medical advice.',
+      endpoint: '/api/generate-meal',
+      mode: 'planner',
       text: `Create a one-day meal plan.
 Meal goal: ${selectedGoal?.label || form?.mealGoal}
 Calories target: ${form?.calories}
@@ -262,10 +252,14 @@ Return sections: overview, meals with ingredients, protein estimate, shopping li
     setGenerating(false);
 
     if (!response?.ok) {
+      if (response?.code === 'usage_limit_reached') {
+        setUpgradeOpen(true);
+      }
       setLocalError(response?.message || 'Meal plan could not be generated.');
       return;
     }
 
+    syncFeatureUsage('mealPlanner', response?.usage);
     const entry = {
       id: `meal-plan-${Date.now()}`,
       feature: 'mealPlanner',

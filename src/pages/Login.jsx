@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Check, Eye, EyeOff, KeyRound, Mail, Sparkles } from 'lucide-react';
 import AppLogo from '../components/layout/AppLogo.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -40,6 +40,7 @@ function validateRecoveryEmail(email) {
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const { user, loading: authLoading, error: authError, signIn, resetPassword, clearError } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
@@ -53,12 +54,16 @@ export default function Login() {
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoverySent, setRecoverySent] = useState(false);
   const empty = !isSupabaseConfigured;
+  const requestedPath = typeof location?.state?.from === 'string' ? location?.state?.from : '';
+  const postAuthDestination = requestedPath?.startsWith('/') && !['/login', '/signup', '/reset-password'].includes(requestedPath)
+    ? requestedPath
+    : '/dashboard';
 
   useEffect(() => {
     if (user?.id) {
-      navigate('/dashboard', { replace: true });
+      navigate(postAuthDestination, { replace: true });
     }
-  }, [navigate, user?.id]);
+  }, [navigate, postAuthDestination, user?.id]);
 
   useEffect(() => {
     if (authError) {
@@ -107,7 +112,7 @@ export default function Login() {
     }
 
     toast?.success?.('You are back in the ascent.');
-    navigate('/dashboard', { replace: true });
+    navigate(postAuthDestination, { replace: true });
   }
 
   async function handleRecoverySubmit(event) {

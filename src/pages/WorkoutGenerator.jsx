@@ -6,8 +6,9 @@ import Modal from '../components/ui/Modal.jsx';
 import StatBadge from '../components/ui/StatBadge.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
-import { getUsageSnapshot, recordFeatureUsage } from '../utils/usageTracker.js';
+import { getUsageSnapshot, syncFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
+import { callAuthenticatedApi } from '../lib/apiClient.js';
 import { supabase } from '../lib/supabase.js';
 import {
   buildDefaultScheduleForPlan,
@@ -151,7 +152,7 @@ export function isAIServiceConfigured() {
   return Boolean(supabase);
 }
 
-export async function callOpenAIResponse({ instructions, text, imageDataUrl }) {
+export async function callOpenAIResponse({ endpoint = '/api/generate-workout', text, imageDataUrl, mode }) {
   if (!isAIServiceConfigured()) {
     return {
       ok: false,
@@ -161,23 +162,23 @@ export async function callOpenAIResponse({ instructions, text, imageDataUrl }) {
   }
 
   try {
-    const invocation = (await supabase?.functions?.invoke?.('ai-generate', {
-      body: {
-        instructions,
-        text,
-        imageDataUrl: imageDataUrl || '',
-      },
-    })) || {};
+    const result = await callAuthenticatedApi(endpoint, {
+      prompt: text,
+      imageDataUrl: imageDataUrl || '',
+      mode: mode || undefined,
+    });
 
-    if (invocation?.error) {
+    if (!result?.ok) {
       return {
         ok: false,
         text: '',
-        message: 'The AI forge could not complete that request.',
+        status: result?.status || 0,
+        code: result?.code || '',
+        message: result?.message || 'The AI forge could not complete that request.',
       };
     }
 
-    const outputText = String(invocation?.data?.text || '');
+    const outputText = String(result?.data?.text || '');
 
     if (!outputText?.trim()) {
       return {
@@ -190,6 +191,7 @@ export async function callOpenAIResponse({ instructions, text, imageDataUrl }) {
     return {
       ok: true,
       text: outputText?.trim(),
+      usage: result?.data?.usage || null,
       message: '',
     };
   } catch {
@@ -810,17 +812,6 @@ export default function WorkoutGenerator() {
       return;
     }
 
-    const usage = recordFeatureUsage('workoutGenerator', user);
-
-    if (!usage?.success) {
-      if (!usage?.owner && usage?.reason === 'limit_reached') {
-        setUpgradeOpen(true);
-      } else {
-        setLocalError(usage?.message || 'Usage could not be updated right now.');
-      }
-      return;
-    }
-
     setGenerating(true);
     const selectedGoal = WORKOUT_GOALS.find((goal) => goal?.id === form?.goal)?.label || form?.goal;
     const selectedExperience = EXPERIENCE_LEVELS.find((level) => level?.id === form?.experience)?.label || form?.experience;
@@ -840,16 +831,19 @@ Return complete sections: weekly split, warmup, day-by-day workout, progression 
 Use weekday labels exactly like Mon - Day 1, Tue - Day 2, Wed - Day 3, Thu - Day 4, Fri - Day 5, Sat - Day 6, Sun - Day 7 wherever day headings appear.
 Do not omit exercise details, coaching notes, progression rules, or recovery notes.`;
     const response = await callOpenAIResponse({
-      instructions: 'You are a careful fitness coach inside a fantasy RPG app. Provide practical text only, no markdown tables, no medical diagnosis.',
       text: prompt,
     });
     setGenerating(false);
 
     if (!response?.ok) {
+      if (response?.code === 'usage_limit_reached') {
+        setUpgradeOpen(true);
+      }
       setLocalError(response?.message || 'Workout could not be generated.');
       return;
     }
 
+    syncFeatureUsage('workoutGenerator', response?.usage);
     setResult(formatWorkoutDayLabels(response?.text));
     toast?.success?.('Workout plan generated. Save it to history when ready.');
   }
