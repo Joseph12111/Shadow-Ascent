@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlarmClock, Bell, BellOff, BellRing, CheckCircle2, Clock, ShieldAlert, Smartphone, Zap } from 'lucide-react';
+import { AlarmClock, Bell, BellOff, CheckCircle2, Clock, ShieldAlert, Smartphone, Zap } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
 import { useAuth } from '../hooks/useAuth.js';
@@ -11,7 +11,6 @@ import {
   readNotificationSettings,
   requestNotificationPermission,
   saveNotificationSettings,
-  showBrowserNotification,
   syncNotificationSettingsFromSupabase,
 } from '../utils/notificationSystem.js';
 
@@ -36,7 +35,6 @@ export default function NotificationSettings() {
   const [settings, setSettings] = useState(() => readNotificationSettings());
   const [permission, setPermission] = useState(() => getNotificationPermission());
   const [localError, setLocalError] = useState('');
-  const [testing, setTesting] = useState(false);
   const support = useMemo(() => getNotificationSupport(), []);
   const empty = false;
   const permissionWarning = permission === 'denied' || permission === 'unsupported';
@@ -84,12 +82,12 @@ export default function NotificationSettings() {
     if (nextPermission !== 'granted') {
       const nextSettings = {
         ...(settings || {}),
-        enabled: false,
+        enabled: true,
         permissionAsked: true,
-        permissionSkipped: nextPermission === 'default',
+        permissionSkipped: false,
       };
       persist(nextSettings);
-      setLocalError('Notifications are not enabled at the browser or device level.');
+      setLocalError('In-app reminders are enabled. System notifications remain blocked at the browser or device level.');
       return;
     }
 
@@ -99,64 +97,6 @@ export default function NotificationSettings() {
       permissionAsked: true,
       permissionSkipped: false,
     });
-  }
-
-  async function sendTestNotification() {
-    setTesting(true);
-    setLocalError('');
-
-    try {
-      let nextPermission = getNotificationPermission();
-      if (nextPermission === 'default') {
-        nextPermission = await requestNotificationPermission();
-        setPermission(nextPermission);
-      }
-
-      if (nextPermission !== 'granted') {
-        setLocalError(
-          nextPermission === 'unsupported'
-            ? 'This browser does not support web notifications. Use the in-app reminder fallback.'
-            : 'Notification permission is blocked. Enable it in your browser or device settings, then try again.',
-        );
-        toast?.warning?.('Test reminder shown inside Shadow Ascent because system notifications are unavailable.', 'Test Quest Alert');
-        return;
-      }
-
-      const nextSettings = saveNotificationSettings(user, {
-        ...(settings || {}),
-        enabled: true,
-        permissionAsked: true,
-        permissionSkipped: false,
-      });
-      setSettings(nextSettings);
-
-      const delivery = await showBrowserNotification(
-        {
-          title: 'Quest Assistant Ready',
-          body: 'Test successful. Shadow Ascent reminders can reach this device.',
-          tag: `shadow-ascent-test-${Date.now()}`,
-          url: '/notifications',
-        },
-        nextSettings,
-        {
-          sound: true,
-          soundName: 'soft-chime',
-          vibration: true,
-        },
-      );
-
-      if (delivery?.shown) {
-        toast?.success?.('System test notification sent.', 'Quest Assistant Ready');
-      } else {
-        setLocalError('The browser accepted permission but could not display a system notification. The in-app fallback is working.');
-        toast?.warning?.('In-app test reminder delivered. Install the app or review device notification settings for system alerts.', 'Test Quest Alert');
-      }
-    } catch {
-      setLocalError('The test notification could not be delivered. Review browser or device notification settings.');
-      toast?.warning?.('In-app reminder fallback is active.', 'Test Quest Alert');
-    } finally {
-      setTesting(false);
-    }
   }
 
   function updateSetting(field, value) {
@@ -229,10 +169,6 @@ export default function NotificationSettings() {
                 <Bell className="h-4 w-4" aria-hidden="true" />
                 Allow Notifications
               </Button>
-              <Button disabled={testing} onClick={sendTestNotification} variant="secondary">
-                <BellRing className="h-4 w-4" aria-hidden="true" />
-                {testing ? 'Sending Test...' : 'Send Test Notification'}
-              </Button>
               <Button onClick={disableAll} variant="ghost">
                 <BellOff className="h-4 w-4" aria-hidden="true" />
                 Disable All
@@ -250,8 +186,18 @@ export default function NotificationSettings() {
 
       <Card title="Master Controls" subtitle="Gold switches are enabled. We respect denied permissions and quiet hours." icon={ShieldAlert}>
         <div className="grid gap-3 lg:grid-cols-2">
-          <Toggle checked={settings?.enabled} disabled={permission !== 'granted'} label="Enable all notifications" description={permission !== 'granted' ? 'Allow browser notifications first.' : 'Master switch for all enabled channels.'} onChange={(value) => updateSetting('enabled', value)} />
-          <Toggle checked={!settings?.enabled} label="Disable all notifications" description="Turns off active delivery while preserving preferences." onChange={(value) => (value ? updateSetting('enabled', false) : undefined)} />
+          <Toggle
+            checked={settings?.enabled}
+            label="Enable all notifications"
+            description={
+              permission !== 'granted'
+                ? settings?.enabled
+                  ? 'In-app reminders active. System permission is blocked.'
+                  : 'Turn on for in-app reminders and request system permission.'
+                : 'Master switch for all enabled channels.'
+            }
+            onChange={(value) => (value ? enableNotifications() : updateSetting('enabled', false))}
+          />
           <Toggle checked={settings?.sound} label="Enable sound" description="Allow audible quest cues when the browser supports them." onChange={(value) => updateSetting('sound', value)} />
           <Toggle checked={settings?.vibration} label="Enable vibration" description="Vibrate supported mobile devices for priority reminders." onChange={(value) => updateSetting('vibration', value)} />
           <Toggle checked={settings?.lockScreen} label="Enable lock-screen notifications" description="Preference saved for device-level notification display." onChange={(value) => updateSetting('lockScreen', value)} />
