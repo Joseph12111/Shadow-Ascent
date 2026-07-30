@@ -23,7 +23,8 @@ function extractResponseText(data) {
 
 function isOwner(user) {
   const configuredOwner = String(process?.env?.OWNER_EMAIL || process?.env?.VITE_OWNER_EMAIL || '').trim().toLowerCase();
-  return Boolean(configuredOwner && user?.email?.trim()?.toLowerCase() === configuredOwner);
+  const accountRole = String(user?.app_metadata?.role || user?.app_metadata?.account_role || '').trim().toLowerCase();
+  return ['admin', 'founder', 'owner'].includes(accountRole) || Boolean(configuredOwner && user?.email?.trim()?.toLowerCase() === configuredOwner);
 }
 
 export async function generateWithOpenAI({ user, feature, prompt, imageDataUrl = '' }) {

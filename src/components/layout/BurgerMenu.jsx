@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, useLocation } from 'react-router-dom';
-import { Brain, ChevronDown, Crown, Menu, Settings, X } from 'lucide-react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Brain, ChevronDown, Crown, LogOut, Menu, Settings, X } from 'lucide-react';
 import Button from '../ui/Button.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
+import { useToast } from '../../hooks/useToast.js';
 import AppLogo from './AppLogo.jsx';
 import { sidebarItems } from './Sidebar.jsx';
 
@@ -56,8 +58,12 @@ function DropdownGroup({ icon: Icon, label, open, active, children, onToggle }) 
 }
 
 export default function BurgerMenu({ loading = false, error = null, empty = false, items = sidebarItems }) {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const location = useLocation();
   const [shadowOpen, setShadowOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -137,6 +143,25 @@ export default function BurgerMenu({ loading = false, error = null, empty = fals
     setSettingsOpen((current) => !current);
   }
 
+  async function handleSignOut() {
+    if (signingOut) {
+      return;
+    }
+
+    setSigningOut(true);
+    const result = await signOut?.();
+    setSigningOut(false);
+
+    if (result?.error) {
+      toast?.error?.('Sign out could not be completed right now.');
+      return;
+    }
+
+    closeMenu();
+    toast?.success?.('You have signed out.');
+    navigate('/login', { replace: true });
+  }
+
   if (loading) {
     return <div className="h-11 w-11 animate-pulse rounded-xl border border-white/10 bg-white/[0.03] lg:hidden" />;
   }
@@ -151,7 +176,7 @@ export default function BurgerMenu({ loading = false, error = null, empty = fals
       onClick={closeMenu}
     >
       <aside
-        className={`relative z-[2147483647] h-full w-[min(20rem,calc(100%-2rem))] overflow-hidden rounded-none border-r border-shadow-gold/25 p-5 shadow-[10px_0_40px_rgba(0,0,0,0.72)] transition-all ease-out ${open ? 'translate-x-0 opacity-100 duration-[250ms]' : '-translate-x-4 opacity-0 duration-150'}`}
+        className={`relative z-[2147483647] flex h-full w-[min(20rem,calc(100%-2rem))] flex-col overflow-hidden rounded-none border-r border-shadow-gold/25 p-5 shadow-[10px_0_40px_rgba(0,0,0,0.72)] transition-all ease-out ${open ? 'translate-x-0 opacity-100 duration-[250ms]' : '-translate-x-4 opacity-0 duration-150'}`}
         onClick={(event) => event?.stopPropagation?.()}
         style={{
           background: '#0A0A0F',
@@ -179,7 +204,7 @@ export default function BurgerMenu({ loading = false, error = null, empty = fals
           </Button>
         </div>
 
-        <nav className="relative z-20 space-y-2" aria-label="Mobile menu navigation">
+        <nav className="relative z-20 flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Mobile menu navigation">
           <DropdownGroup active={shadowActive} icon={Crown} label="Shadow" onToggle={() => toggleGroup('shadow')} open={shadowOpen}>
             {shadowItems?.map((item) => {
               const Icon = item?.icon;
@@ -250,6 +275,15 @@ export default function BurgerMenu({ loading = false, error = null, empty = fals
             );
           })}
         </nav>
+
+        {user?.id ? (
+          <div className="relative z-20 mt-4 shrink-0 border-t border-white/10 pt-4">
+            <Button className="w-full" loading={signingOut} onClick={handleSignOut} variant="danger">
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              Sign Out
+            </Button>
+          </div>
+        ) : null}
       </aside>
     </div>
   ) : null;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Brain, ChevronDown, Crown, Dumbbell, Lock, Save, Sparkles, Trash2 } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
@@ -8,6 +9,7 @@ import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { getUsageSnapshot, syncFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
+import { getPlanAccess } from '../utils/planAccess.js';
 import { callAuthenticatedApi } from '../lib/apiClient.js';
 import { supabase } from '../lib/supabase.js';
 import {
@@ -119,11 +121,18 @@ const SESSION_MINUTE_OPTIONS = [
   { id: '90', label: '90 minutes', description: 'Advanced training block' },
 ];
 
+const TRAINING_ENVIRONMENTS = [
+  { id: 'gym', label: 'Gym', description: 'Commercial gym equipment and machines' },
+  { id: 'calisthenics', label: 'Calisthenics', description: 'Bodyweight strength and skill training' },
+  { id: 'home_gym', label: 'Home Gym', description: 'Train with the equipment available at home' },
+];
+
 const WORKOUT_FORM_STEPS = [
   'goal',
   'experience',
   'daysPerWeek',
   'sessionMinutes',
+  'trainingEnvironment',
   'upperBody',
   'lowerBody',
   'healthConditions',
@@ -225,7 +234,7 @@ export function saveAIHistory({ key, entry, user, table }) {
 
 export function UpgradeModal({ open, onClose, featureName }) {
   return (
-    <Modal description="The free daily limit has been reached for this tool." onClose={onClose} open={open} title="Upgrade Required">
+    <Modal description="The current plan allowance has been reached for this tool." onClose={onClose} open={open} title="Upgrade Required">
       <div className="space-y-4">
         <div className="rounded-2xl border border-shadow-gold/30 bg-shadow-gold/10 p-4">
           <div className="flex items-center gap-3">
@@ -233,7 +242,7 @@ export function UpgradeModal({ open, onClose, featureName }) {
             <p className="font-heading text-lg font-bold text-shadow-gold">{featureName}</p>
           </div>
           <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">
-            You have used today free allowance. Owner accounts bypass this gate automatically.
+            Your next allowance depends on your plan and this feature's reset schedule. Founder/Admin accounts have unlimited access.
           </p>
         </div>
         <Button className="w-full" onClick={onClose}>
@@ -245,21 +254,33 @@ export function UpgradeModal({ open, onClose, featureName }) {
 }
 
 export function UsageBanner({ feature, user, title }) {
-  const usage = getUsageSnapshot(user)?.[feature];
-  const owner = isOwner(user);
+  const { profile, subscription } = useAuth();
+  const access = getPlanAccess({ user, profile, subscription });
+  const usage = getUsageSnapshot(user, profile, subscription)?.[feature];
+  const owner = access?.owner;
+  const usageMessage =
+    owner
+      ? 'Founder/Admin access: unlimited generations.'
+      : feature === 'mealScanner' && usage?.cadence === 'level'
+        ? usage?.remaining > 0
+          ? `${usage?.remaining} level reward scan available. The next scan unlocks at Level ${usage?.nextUnlockLevel}.`
+          : `Your next free meal scan unlocks at Level ${usage?.nextUnlockLevel}.`
+        : feature === 'mealScanner'
+          ? `${usage?.remaining ?? 0} of ${usage?.limit ?? 0} scans remaining today.`
+          : `${usage?.remaining ?? 0} of ${usage?.limit ?? 0} generations remaining this month.`;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
       <div>
         <p className="font-heading text-lg font-bold text-shadow-gold">{title}</p>
         <p className="text-sm text-shadow-textSecondary">
-          {owner ? 'Owner access: unlimited generations.' : `${usage?.remaining ?? 0} of ${usage?.limit ?? 0} free uses remaining today.`}
+          {usageMessage}
         </p>
       </div>
       {owner ? (
         <span className="inline-flex items-center gap-2 rounded-full border border-shadow-gold/30 bg-shadow-gold/10 px-3 py-1 text-xs font-semibold text-shadow-gold">
           <Crown className="h-4 w-4" aria-hidden="true" />
-          Owner
+          Founder/Admin
         </span>
       ) : (
         <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-semibold text-shadow-textSecondary">
@@ -325,14 +346,17 @@ function formatWorkoutDayLabels(text) {
 }
 
 export default function WorkoutGenerator() {
-  const { user, profile, loading, error } = useAuth();
+  const { user, profile, subscription, loading, error } = useAuth();
+  const navigate = useNavigate();
   const toast = useToast();
-  const owner = isOwner(user);
+  const access = useMemo(() => getPlanAccess({ user, profile, subscription }), [profile, subscription, user]);
+  const owner = access?.owner || isOwner(user);
   const [form, setForm] = useState({
     goal: 'general_fitness',
     experience: 'intermediate',
     daysPerWeek: '3',
     sessionMinutes: '45',
+    trainingEnvironment: 'gym',
     equipment: '',
     selectedLimitations: [],
     limitationNotes: '',
@@ -365,6 +389,7 @@ export default function WorkoutGenerator() {
   const [generating, setGenerating] = useState(false);
   const [localError, setLocalError] = useState('');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [accessUpgradeOpen, setAccessUpgradeOpen] = useState(false);
   const [activeFormStep, setActiveFormStep] = useState('goal');
   const empty = !isAIServiceConfigured();
   const hasErrors = useMemo(() => Object.keys(formErrors || {})?.length > 0, [formErrors]);
@@ -445,6 +470,25 @@ export default function WorkoutGenerator() {
       setUpgradeOpen(false);
     }
   }, [owner, upgradeOpen]);
+
+  useEffect(() => {
+    if (access?.workoutLimitations) {
+      return;
+    }
+
+    setForm((currentForm) => {
+      const selected = Array.isArray(currentForm?.selectedLimitations) ? currentForm?.selectedLimitations : [];
+      if (!selected?.length && !currentForm?.limitationNotes) {
+        return currentForm;
+      }
+
+      return {
+        ...currentForm,
+        selectedLimitations: [],
+        limitationNotes: '',
+      };
+    });
+  }, [access?.workoutLimitations]);
 
   useEffect(() => {
     if (!savedPlans?.length) {
@@ -816,16 +860,20 @@ export default function WorkoutGenerator() {
     const selectedGoal = WORKOUT_GOALS.find((goal) => goal?.id === form?.goal)?.label || form?.goal;
     const selectedExperience = EXPERIENCE_LEVELS.find((level) => level?.id === form?.experience)?.label || form?.experience;
     const selectedDays = DAYS_PER_WEEK_OPTIONS.find((entry) => entry?.id === form?.daysPerWeek);
-    const selectedLimitations = Array.isArray(form?.selectedLimitations) ? form?.selectedLimitations : [];
+    const selectedEnvironment =
+      TRAINING_ENVIRONMENTS.find((environment) => environment?.id === form?.trainingEnvironment)?.label || 'Gym';
+    const selectedLimitations =
+      access?.workoutLimitations && Array.isArray(form?.selectedLimitations) ? form?.selectedLimitations : [];
     const limitationSummary = selectedLimitations?.length ? selectedLimitations.join('; ') : 'none selected';
     const prompt = `Create a safe, progressive workout plan for Shadow Ascent.
 Goal: ${selectedGoal}
 Experience: ${selectedExperience}
 Days per week: ${selectedDays?.label || form?.daysPerWeek} (${selectedDays?.description || 'custom schedule'})
 Session length: ${form?.sessionMinutes} minutes
+Training environment: ${selectedEnvironment}
 Equipment: ${form?.equipment || 'bodyweight only'}
 Limitations selected: ${limitationSummary}
-Additional limitation notes: ${form?.limitationNotes || 'none provided'}
+Additional limitation notes: ${access?.workoutLimitations ? form?.limitationNotes || 'none provided' : 'premium customization not enabled'}
 
 Return complete sections: weekly split, warmup, day-by-day workout, progression rules, recovery notes.
 Use weekday labels exactly like Mon - Day 1, Tue - Day 2, Wed - Day 3, Thu - Day 4, Fri - Day 5, Sat - Day 6, Sun - Day 7 wherever day headings appear.
@@ -901,38 +949,71 @@ Do not omit exercise details, coaching notes, progression rules, or recovery not
               onSelect={(value) => selectFormOption('sessionMinutes', value, 'sessionMinutes')}
             />
 
+            <StepDropdown
+              isOpen={activeFormStep === 'trainingEnvironment'}
+              onToggle={() => setActiveFormStep(activeFormStep === 'trainingEnvironment' ? '' : 'trainingEnvironment')}
+              options={TRAINING_ENVIRONMENTS}
+              selected={form?.trainingEnvironment}
+              stepNumber="05"
+              title="Training Environment"
+              onSelect={(value) => {
+                updateField('trainingEnvironment', value);
+                setActiveFormStep(access?.workoutLimitations ? 'upperBody' : '');
+              }}
+            />
+
             <div className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-shadow-textMuted">Limitations (Injuries & Health Conditions)</p>
-                <p className="mt-1 text-sm text-shadow-textSecondary">Pick any that apply. Each choice moves you to the next section.</p>
-              </div>
+              {access?.workoutLimitations ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-shadow-textMuted">Limitations (Injuries & Health Conditions)</p>
+                    <p className="mt-1 text-sm text-shadow-textSecondary">Pick any that apply. Each choice moves you to the next section.</p>
+                  </div>
 
-              {LIMITATION_GROUPS.map((group, index) => (
-                <StepDropdown
-                  allowNone
-                  isMulti
-                  isOpen={activeFormStep === group?.id}
-                  key={group?.id}
-                  noneLabel={`No ${String(group?.title || '').toLowerCase()} limitation`}
-                  onNone={() => moveToNextFormStep(group?.id)}
-                  onToggle={() => setActiveFormStep(activeFormStep === group?.id ? '' : group?.id)}
-                  options={group?.options?.map((option) => ({ id: option, label: option }))}
-                  selectedValues={form?.selectedLimitations}
-                  stepNumber={`0${index + 5}`}
-                  title={group?.title}
-                  onSelect={(value) => selectLimitationOption(value, group?.id)}
-                />
-              ))}
+                  {LIMITATION_GROUPS.map((group, index) => (
+                    <StepDropdown
+                      allowNone
+                      isMulti
+                      isOpen={activeFormStep === group?.id}
+                      key={group?.id}
+                      noneLabel={`No ${String(group?.title || '').toLowerCase()} limitation`}
+                      onNone={() => moveToNextFormStep(group?.id)}
+                      onToggle={() => setActiveFormStep(activeFormStep === group?.id ? '' : group?.id)}
+                      options={group?.options?.map((option) => ({ id: option, label: option }))}
+                      selectedValues={form?.selectedLimitations}
+                      stepNumber={`0${index + 6}`}
+                      title={group?.title}
+                      onSelect={(value) => selectLimitationOption(value, group?.id)}
+                    />
+                  ))}
 
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-shadow-textMuted">Additional Limitation Notes</span>
-                <textarea
-                  className="mt-2 min-h-24 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40"
-                  onChange={(event) => updateField('limitationNotes', event?.target?.value || '')}
-                  placeholder="Optional notes for injuries, mobility, medical clearance, equipment access, or custom equipment."
-                  value={form?.limitationNotes}
-                />
-              </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-[0.2em] text-shadow-textMuted">Additional Limitation Notes</span>
+                    <textarea
+                      className="mt-2 min-h-24 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40"
+                      onChange={(event) => updateField('limitationNotes', event?.target?.value || '')}
+                      placeholder="Optional notes for injuries, mobility, medical clearance, or custom health restrictions."
+                      value={form?.limitationNotes}
+                    />
+                  </label>
+                </>
+              ) : (
+                <button
+                  className="w-full rounded-2xl border border-shadow-purple/35 bg-shadow-purple/10 p-4 text-left transition hover:border-shadow-gold/35"
+                  onClick={() => setAccessUpgradeOpen(true)}
+                  type="button"
+                >
+                  <span className="flex items-center gap-3">
+                    <Lock className="h-5 w-5 shrink-0 text-shadow-gold" aria-hidden="true" />
+                    <span>
+                      <span className="block font-heading text-lg font-bold text-shadow-gold">Injuries & Health Conditions</span>
+                      <span className="mt-1 block text-sm leading-6 text-shadow-textSecondary">
+                        Advanced limitations and custom health restrictions are available on paid plans.
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              )}
 
               <Field label="Equipment You Have" onChange={(event) => updateField('equipment', event?.target?.value || '')} placeholder="Optional: dumbbells, bands, pull-up bar, bodyweight only..." value={form?.equipment} />
             </div>
@@ -1026,6 +1107,27 @@ Do not omit exercise details, coaching notes, progression rules, or recovery not
       </section>
 
       <UpgradeModal featureName="Workout Generator" onClose={() => setUpgradeOpen(false)} open={!owner && upgradeOpen} />
+      <Modal
+        description="Upgrade to tailor generated workouts around injuries, health conditions, and advanced restrictions."
+        onClose={() => setAccessUpgradeOpen(false)}
+        open={accessUpgradeOpen}
+        title="Advanced Workout Customization"
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4 text-sm leading-6 text-shadow-textSecondary">
+            Gym, Calisthenics, and Home Gym remain available to every user. Hunter, Shadow Elite, and Monarch unlock the full health and limitation controls.
+          </div>
+          <Button
+            className="w-full"
+            onClick={() => {
+              setAccessUpgradeOpen(false);
+              navigate('/subscription');
+            }}
+          >
+            View Plans
+          </Button>
+        </div>
+      </Modal>
       <Modal description="Delete this plan? This cannot be undone." onClose={() => setDeleteTarget(null)} open={Boolean(deleteTarget)} title="Delete Plan">
         <div className="flex justify-end gap-3">
           <Button onClick={() => setDeleteTarget(null)} variant="ghost">

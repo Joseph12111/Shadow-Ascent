@@ -12,8 +12,10 @@ import {
 } from '../lib/supabase.js';
 
 const PROFILE_STORAGE_KEY = 'userProfile';
+const SUBSCRIPTION_STORAGE_KEY = 'shadowAscentSubscription';
 const AUTH_LOCAL_KEYS = [
   PROFILE_STORAGE_KEY,
+  SUBSCRIPTION_STORAGE_KEY,
   'shadowAscentSession',
   'shadowAscentProfile',
   'shadowAscentProfileStatus',
@@ -57,6 +59,29 @@ function writeStoredProfile(profile) {
       globalThis?.localStorage?.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
     } else {
       globalThis?.localStorage?.removeItem(PROFILE_STORAGE_KEY);
+    }
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
+function readStoredSubscription() {
+  try {
+    const storedSubscription = globalThis?.localStorage?.getItem(SUBSCRIPTION_STORAGE_KEY);
+    return storedSubscription ? JSON.parse(storedSubscription) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSubscription(subscription) {
+  try {
+    if (subscription) {
+      globalThis?.localStorage?.setItem(SUBSCRIPTION_STORAGE_KEY, JSON.stringify(subscription));
+    } else {
+      globalThis?.localStorage?.removeItem(SUBSCRIPTION_STORAGE_KEY);
     }
   } catch {
     return false;
@@ -294,9 +319,23 @@ async function fetchProfile(authUser) {
   }
 }
 
+async function fetchSubscription(authUser) {
+  if (!authUser?.id || !supabase) {
+    return { subscription: null, failed: false };
+  }
+
+  try {
+    const { data, error } = await supabase.from('subscriptions').select('*').eq('user_id', authUser?.id).maybeSingle();
+    return error ? { subscription: null, failed: true } : { subscription: data || null, failed: false };
+  } catch {
+    return { subscription: null, failed: true };
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(() => readStoredProfile());
+  const [subscription, setSubscription] = useState(() => readStoredSubscription());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
@@ -305,12 +344,20 @@ export function AuthProvider({ children }) {
     if (!authUser?.id) {
       setProfile(null);
       writeStoredProfile(null);
+      setSubscription(null);
+      writeStoredSubscription(null);
       return null;
     }
 
-    const { profile: nextProfile } = await fetchProfile(authUser);
+    const [{ profile: nextProfile }, subscriptionResult] = await Promise.all([
+      fetchProfile(authUser),
+      fetchSubscription(authUser),
+    ]);
+    const nextSubscription = subscriptionResult?.failed ? readStoredSubscription() : subscriptionResult?.subscription || null;
     setProfile(nextProfile);
     writeStoredProfile(nextProfile);
+    setSubscription(nextSubscription);
+    writeStoredSubscription(nextSubscription);
     return nextProfile;
   }, []);
 
@@ -388,6 +435,7 @@ export function AuthProvider({ children }) {
     clearAuthStorage();
     setUser(null);
     setProfile(null);
+    setSubscription(null);
     setPasswordRecovery(false);
 
     const result = await signOutUser();
@@ -401,7 +449,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let active = true;
-    let subscription = null;
+    let authSubscription = null;
 
     async function bootstrapAuth() {
       setLoading(true);
@@ -448,6 +496,7 @@ export function AuthProvider({ children }) {
           if (event === 'SIGNED_OUT') {
             clearAuthStorage();
             setProfile(null);
+            setSubscription(null);
             setPasswordRecovery(false);
             setError(null);
             return;
@@ -458,7 +507,7 @@ export function AuthProvider({ children }) {
           }
         });
 
-        subscription = data?.subscription || null;
+        authSubscription = data?.subscription || null;
       } catch {
         return;
       }
@@ -467,7 +516,7 @@ export function AuthProvider({ children }) {
     return () => {
       active = false;
       try {
-        subscription?.unsubscribe?.();
+        authSubscription?.unsubscribe?.();
       } catch {
         return undefined;
       }
@@ -507,6 +556,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       profile,
+      subscription,
       loading,
       error,
       passwordRecovery,
@@ -518,7 +568,7 @@ export function AuthProvider({ children }) {
       updatePassword,
       clearError: () => setError(null),
     }),
-    [error, loading, passwordRecovery, profile, resetPassword, signIn, signOut, signUp, updatePassword, updateProfile, user],
+    [error, loading, passwordRecovery, profile, resetPassword, signIn, signOut, signUp, subscription, updatePassword, updateProfile, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

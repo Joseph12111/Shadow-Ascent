@@ -253,7 +253,7 @@ function PlanCard({ billingCycle, loading, onSubscribe, plan }) {
             <span className="pb-1 text-sm text-shadow-textMuted">/{annualSelected ? 'year' : 'month'}</span>
           </p>
           {annualSelected && Number(plan?.monthlyPrice || 0) > 0 ? (
-            <p className="mt-2 text-sm font-semibold text-shadow-green">Includes 2 months free.</p>
+            <p className="mt-2 text-sm font-semibold text-shadow-green">Annual discounted rate.</p>
           ) : null}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { Crown, Sparkles, TrendingUp } from 'lucide-react';
+import { Crown, Gift, Sparkles, TrendingUp } from 'lucide-react';
 import Modal from '../ui/Modal.jsx';
 import Button from '../ui/Button.jsx';
 import RankEmblem from '../game/RankEmblem.jsx';
@@ -11,6 +11,7 @@ export default function RankUpCelebrationModal({ open = false, onClose, rankUpDa
   const nextRankName = nextRank?.rankName || nextRank?.name || 'Ascended Rank';
   const totalRP = Number(rankUpData?.totalRP || 0);
   const source = String(rankUpData?.source || 'progress');
+  const rankGift = rankUpData?.rankGift;
   const empty = !nextRankId;
 
   return (
@@ -50,6 +51,17 @@ export default function RankUpCelebrationModal({ open = false, onClose, rankUpDa
             </div>
           </div>
         </div>
+
+        {rankGift?.id ? (
+          <div className="rounded-2xl border border-shadow-purple/35 bg-shadow-purple/10 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-shadow-purpleLight">Rank Gift Awarded</p>
+            <p className="mt-2 flex items-center gap-2 font-heading text-xl font-bold text-shadow-gold">
+              <Gift className="h-5 w-5" aria-hidden="true" />
+              {rankGift?.name}
+            </p>
+            <p className="mt-2 text-sm text-shadow-textSecondary">This chest was earned from the rank upgrade and cannot be purchased.</p>
+          </div>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">

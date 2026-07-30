@@ -128,7 +128,7 @@ export function safeApiMessage(error, fallback) {
   const messages = {
     auth_required: 'Sign in to continue.',
     invalid_credentials: 'Password verification failed.',
-    usage_limit_reached: 'Your plan limit has been reached for this month.',
+    usage_limit_reached: 'Your current plan allowance has been reached.',
     ai_not_configured: 'The AI forge is not configured yet.',
     stripe_not_configured: 'Secure billing is not configured yet.',
     subscription_not_found: 'No active Stripe customer was found for this account.',

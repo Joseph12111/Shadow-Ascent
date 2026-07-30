@@ -4,10 +4,18 @@ export function getOwnerEmail() {
 
 export function isOwner(userOrEmail) {
   const ownerEmail = getOwnerEmail();
+  const accountRole =
+    typeof userOrEmail === 'string'
+      ? ''
+      : String(userOrEmail?.app_metadata?.role || userOrEmail?.app_metadata?.account_role || '').trim().toLowerCase();
   const candidateEmail =
     typeof userOrEmail === 'string'
       ? userOrEmail
       : userOrEmail?.email || userOrEmail?.user_metadata?.email || userOrEmail?.profile?.email || '';
+
+  if (['admin', 'founder', 'owner'].includes(accountRole)) {
+    return true;
+  }
 
   if (!ownerEmail || !candidateEmail) {
     return false;

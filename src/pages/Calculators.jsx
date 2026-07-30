@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calculator, CheckCircle2, Droplets, Dumbbell, Flame, Salad, Save } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Calculator, CheckCircle2, Droplets, Dumbbell, Flame, Lock, Ruler, Salad, Save, Scale, Target, TimerReset } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
+import Modal from '../components/ui/Modal.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { supabase } from '../lib/supabase.js';
+import { getPlanAccess } from '../utils/planAccess.js';
 
 const ACTIVITY_LEVELS = [
   { id: 'sedentary', label: 'Sedentary', multiplier: 1.2 },
@@ -120,6 +123,7 @@ function buildCalculatorPayload(inputs, metrics) {
     liftWeightKg: inputs?.liftWeightKg || '',
     reps: inputs?.reps || '',
     workoutMinutes: inputs?.workoutMinutes || '',
+    goalWeightKg: inputs?.goalWeightKg || '',
     metrics: {
       ready: Boolean(metrics?.ready),
       bmr: metrics?.ready ? Math.round(Number(metrics?.bmr || 0)) : 0,
@@ -150,7 +154,8 @@ function Field({ label, value, onChange, type = 'number', min = '0', step = 'any
 }
 
 export default function Calculators() {
-  const { user, loading, error, updateProfile } = useAuth();
+  const { user, profile, subscription, loading, error, updateProfile } = useAuth();
+  const navigate = useNavigate();
   const toast = useToast();
   const [inputs, setInputs] = useState(() => {
     const stored = readJSON(CALCULATOR_STORAGE_KEY, {});
@@ -165,10 +170,13 @@ export default function Calculators() {
       liftWeightKg: safeStored?.liftWeightKg || '',
       reps: safeStored?.reps || '',
       workoutMinutes: safeStored?.workoutMinutes || '45',
+      goalWeightKg: safeStored?.goalWeightKg || '',
     };
   });
   const [localError, setLocalError] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
+  const [upgradeCalculator, setUpgradeCalculator] = useState('');
+  const access = useMemo(() => getPlanAccess({ user, profile, subscription }), [profile, subscription, user]);
 
   function updateInput(field, value) {
     setInputs((current) => ({
@@ -228,6 +236,42 @@ export default function Calculators() {
   }, [inputs]);
 
   const empty = false;
+  const premiumMetrics = useMemo(() => {
+    if (!metrics?.ready) {
+      return null;
+    }
+
+    const heightCm = toNumber(inputs?.heightCm, 0);
+    const weightKg = toNumber(inputs?.weightKg, 0);
+    const heightInches = heightCm / 2.54;
+    const inchesOverFiveFeet = heightInches - 60;
+    const baseWeight = inputs?.sex === 'male' ? 50 : inputs?.sex === 'female' ? 45.5 : 47.75;
+    const perfectWeight = Math.max(35, baseWeight + 2.3 * inchesOverFiveFeet);
+    const maleLeanMass = 0.407 * weightKg + 0.267 * heightCm - 19.2;
+    const femaleLeanMass = 0.252 * weightKg + 0.473 * heightCm - 48.3;
+    const leanBodyMass =
+      inputs?.sex === 'male' ? maleLeanMass : inputs?.sex === 'female' ? femaleLeanMass : (maleLeanMass + femaleLeanMass) / 2;
+    const goalWeight = toNumber(inputs?.goalWeightKg, 0);
+    const weeksToGoal = goalWeight > 0 ? Math.ceil(Math.abs(weightKg - goalWeight) / 0.5) : null;
+
+    return {
+      perfectWeight: Math.round(perfectWeight * 10) / 10,
+      leanBodyMass: Math.round(Math.max(0, Math.min(weightKg, leanBodyMass)) * 10) / 10,
+      proportions: {
+        waist: Math.round(heightCm * 0.45),
+        chest: Math.round(heightCm * 0.56),
+        hips: Math.round(heightCm * 0.54),
+      },
+      weeksToGoal,
+    };
+  }, [inputs, metrics?.ready]);
+
+  function openPremiumCalculator(title) {
+    if (access?.paidCalculators) {
+      return;
+    }
+    setUpgradeCalculator(title);
+  }
 
   function saveCalculatorData() {
     const age = toNumber(inputs?.age, 0);
@@ -417,7 +461,117 @@ export default function Calculators() {
           </Card>
         </section>
       )}
+
+      <Card
+        subtitle="Advanced body composition and goal planning tools for paid tiers."
+        title="Premium Calculators"
+        icon={Lock}
+      >
+        <div className="grid gap-4 lg:grid-cols-2">
+          <PremiumCalculatorCard
+            access={access}
+            icon={Scale}
+            onLocked={() => openPremiumCalculator('Perfect Weight by Height')}
+            title="Perfect Weight by Height"
+            value={premiumMetrics ? `${premiumMetrics?.perfectWeight} kg` : 'Complete your body data'}
+            description="A height-based reference estimate using the Devine method."
+          />
+          <PremiumCalculatorCard
+            access={access}
+            icon={Ruler}
+            onLocked={() => openPremiumCalculator('Lean Body Mass')}
+            title="Lean Body Mass"
+            value={premiumMetrics ? `${premiumMetrics?.leanBodyMass} kg` : 'Complete your body data'}
+            description="An estimated lean-mass reference using height, weight, and sex."
+          />
+          <PremiumCalculatorCard
+            access={access}
+            icon={Target}
+            onLocked={() => openPremiumCalculator('Ideal Body Proportions')}
+            title="Ideal Body Proportions"
+            value={
+              premiumMetrics
+                ? `Waist ${premiumMetrics?.proportions?.waist} / Chest ${premiumMetrics?.proportions?.chest} / Hips ${premiumMetrics?.proportions?.hips} cm`
+                : 'Complete your body data'
+            }
+            description="Balanced proportion reference points derived from height."
+          />
+          <PremiumCalculatorCard
+            access={access}
+            icon={TimerReset}
+            onLocked={() => openPremiumCalculator('Goal Timeline Calculator')}
+            title="Goal Timeline Calculator"
+            value={
+              premiumMetrics?.weeksToGoal
+                ? `About ${premiumMetrics?.weeksToGoal} weeks`
+                : access?.paidCalculators
+                  ? 'Enter a goal weight'
+                  : 'Paid plan required'
+            }
+            description="Uses a sustainable 0.5 kg weekly change for a planning estimate."
+          >
+            {access?.paidCalculators ? (
+              <Field
+                label="Goal Weight (kg)"
+                min="1"
+                onChange={(event) => updateInput('goalWeightKg', event?.target?.value || '')}
+                value={inputs?.goalWeightKg}
+              />
+            ) : null}
+          </PremiumCalculatorCard>
+        </div>
+      </Card>
+
+      <Modal
+        description="This advanced calculator is available on Hunter, Shadow Elite, and Monarch plans."
+        onClose={() => setUpgradeCalculator('')}
+        open={Boolean(upgradeCalculator)}
+        title="Upgrade Required"
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-shadow-gold/30 bg-shadow-gold/10 p-4">
+            <p className="font-heading text-xl font-bold text-shadow-gold">{upgradeCalculator}</p>
+            <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">
+              Basic calculators remain free. Upgrade to unlock advanced body and goal calculations.
+            </p>
+          </div>
+          <Button className="w-full" onClick={() => navigate('/subscription')}>
+            View Plans
+          </Button>
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+function PremiumCalculatorCard({ access, children, description, icon: Icon, onLocked, title, value }) {
+  const locked = !access?.paidCalculators;
+
+  return (
+    <article className="relative overflow-hidden rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-shadow-purple/35 bg-black/25">
+            <Icon className="h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="font-heading text-lg font-bold text-shadow-gold">{title}</h3>
+            <p className="mt-1 text-sm leading-6 text-shadow-textSecondary">{description}</p>
+          </div>
+        </div>
+        {locked ? <Lock className="h-5 w-5 shrink-0 text-shadow-gold" aria-hidden="true" /> : null}
+      </div>
+      <p className="mt-4 break-words font-heading text-xl font-bold text-shadow-text">{locked ? 'Premium' : value}</p>
+      {children ? <div className="mt-4">{children}</div> : null}
+      {locked ? (
+        <button
+          className="absolute inset-0 cursor-pointer rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-shadow-gold/70"
+          onClick={onLocked}
+          type="button"
+          aria-label={`Upgrade to use ${title}`}
+        />
+      ) : null}
+    </article>
   );
 }
 

@@ -1,15 +1,22 @@
 import { isOwner } from './ownerCheck.js';
+import { getPlanAccess } from './planAccess.js';
 
 const USAGE_STORAGE_KEY = 'shadowAscentUsage';
 
 export const FREEMIUM_LIMITS = {
   workoutGenerator: 2,
   mealPlanner: 2,
-  mealScanner: 1,
+  mealScanner: 0,
 };
 
-function getPeriodKey(date = new Date()) {
-  return date?.toISOString?.()?.slice(0, 7) || '';
+function getPeriodKey(feature, access, date = new Date()) {
+  const isoDate = date?.toISOString?.() || '';
+
+  if (feature === 'mealScanner') {
+    return access?.mealScanner?.cadence === 'level' ? 'level-entitlement' : isoDate?.slice(0, 10);
+  }
+
+  return isoDate?.slice(0, 7);
 }
 
 function readUsage() {
@@ -31,7 +38,8 @@ function writeUsage(usage) {
   }
 }
 
-function getFeatureEntry(feature, dateKey = getPeriodKey()) {
+function getFeatureEntry(feature, access) {
+  const dateKey = getPeriodKey(feature, access);
   const usage = readUsage();
   const periodUsage = usage?.[dateKey] || {};
   const entry = periodUsage?.[feature];
@@ -49,17 +57,19 @@ function getFeatureEntry(feature, dateKey = getPeriodKey()) {
   };
 }
 
-export function getUsageSnapshot(user) {
-  const dateKey = getPeriodKey();
-  const owner = isOwner(user);
+export function getUsageSnapshot(user, profile, subscription) {
+  const access = getPlanAccess({ user, profile, subscription });
+  const owner = access?.owner;
   const usage = readUsage();
-  const periodUsage = usage?.[dateKey] || {};
 
   return Object.keys(FREEMIUM_LIMITS).reduce((snapshot, feature) => {
+    const dateKey = getPeriodKey(feature, access);
+    const periodUsage = usage?.[dateKey] || {};
     const storedEntry = periodUsage?.[feature];
     const used = Number(typeof storedEntry === 'object' ? storedEntry?.used || 0 : storedEntry || 0);
     const storedLimit = typeof storedEntry === 'object' ? Number(storedEntry?.limit) : NaN;
-    const limit = Number.isFinite(storedLimit) ? storedLimit : FREEMIUM_LIMITS?.[feature];
+    const accessLimit = Number(access?.aiLimits?.[feature]);
+    const limit = Number.isFinite(accessLimit) ? accessLimit : Number.isFinite(storedLimit) ? storedLimit : FREEMIUM_LIMITS?.[feature];
 
     return {
       ...snapshot,
@@ -69,15 +79,18 @@ export function getUsageSnapshot(user) {
         remaining: owner ? Infinity : Math.max(0, limit - used),
         allowed: owner || used < limit,
         owner,
+        cadence: feature === 'mealScanner' ? access?.mealScanner?.cadence : 'monthly',
+        nextUnlockLevel: feature === 'mealScanner' ? access?.mealScanner?.nextUnlockLevel : null,
       },
     };
   }, {});
 }
 
-export function canUseFeature(feature, user) {
+export function canUseFeature(feature, user, profile, subscription) {
+  const access = getPlanAccess({ user, profile, subscription });
   const owner = isOwner(user);
-  const entry = getFeatureEntry(feature);
-  const limit = entry?.limit;
+  const entry = getFeatureEntry(feature, access);
+  const limit = Number(access?.aiLimits?.[feature]);
 
   if (owner) {
     return { allowed: true, owner: true, used: entry?.used, limit: Infinity, remaining: Infinity, reason: 'owner' };
@@ -99,14 +112,15 @@ export function canUseFeature(feature, user) {
   };
 }
 
-export function recordFeatureUsage(feature, user) {
-  const eligibility = canUseFeature(feature, user);
+export function recordFeatureUsage(feature, user, profile, subscription) {
+  const access = getPlanAccess({ user, profile, subscription });
+  const eligibility = canUseFeature(feature, user, profile, subscription);
 
   if (!eligibility?.allowed) {
     return {
       success: false,
       ...eligibility,
-      message: eligibility?.reason === 'limit_reached' ? 'Daily free limit reached.' : 'This feature is unavailable.',
+      message: eligibility?.reason === 'limit_reached' ? 'Your current plan allowance has been reached.' : 'This feature is unavailable.',
     };
   }
 
@@ -120,7 +134,7 @@ export function recordFeatureUsage(feature, user) {
     };
   }
 
-  const dateKey = getPeriodKey();
+  const dateKey = getPeriodKey(feature, access);
   const usage = readUsage();
   const periodUsage = usage?.[dateKey] || {};
   const nextUsed = Number(eligibility?.used || 0) + 1;
@@ -142,8 +156,8 @@ export function recordFeatureUsage(feature, user) {
     allowed: saved,
     owner: false,
     used: nextUsed,
-    limit: FREEMIUM_LIMITS?.[feature],
-    remaining: Math.max(0, FREEMIUM_LIMITS?.[feature] - nextUsed),
+    limit: eligibility?.limit,
+    remaining: Math.max(0, eligibility?.limit - nextUsed),
     reason: saved ? 'allowed' : 'storage_failed',
     message: saved ? null : 'Usage could not be saved locally.',
   };
@@ -157,7 +171,7 @@ export function syncFeatureUsage(feature, serverUsage) {
     return false;
   }
 
-  const dateKey = getPeriodKey();
+  const dateKey = String(serverUsage?.periodKey || '') || getPeriodKey(feature, null);
   const usage = readUsage();
   const periodUsage = usage?.[dateKey] || {};
   const nextUsage = {
@@ -175,7 +189,7 @@ export function syncFeatureUsage(feature, serverUsage) {
 }
 
 export function resetUsage(date = new Date()) {
-  const dateKey = getPeriodKey(date);
+  const dateKey = date?.toISOString?.()?.slice(0, 7) || '';
   const usage = readUsage();
   const nextUsage = {
     ...usage,

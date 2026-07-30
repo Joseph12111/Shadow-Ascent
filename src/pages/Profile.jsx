@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Award, CheckCircle2, Crown, Gem, KeyRound, Lock, Mail, Save, Shield, UserRound } from 'lucide-react';
+import { Award, CheckCircle2, Crown, Gem, Gift, Image as ImageIcon, KeyRound, Lock, Mail, Save, Shield, Sparkles, UserRound } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Modal from '../components/ui/Modal.jsx';
@@ -12,6 +12,7 @@ import { useToast } from '../hooks/useToast.js';
 import { signInWithPassword } from '../lib/supabase.js';
 import { calculateRank, getTotalRP } from '../utils/rankEngine.js';
 import { ACHIEVEMENTS, getUnlockedAchievements } from '../utils/achievementEngine.js';
+import { getPlanAccess, getPlayerLevel, LEVEL_REWARDS } from '../utils/planAccess.js';
 
 const EQUIPPED_KEY = 'shadowAscentEquippedItems';
 const PROFILE_META_KEY = 'shadowAscentProfileMeta';
@@ -45,7 +46,7 @@ function emitEvent(eventName, detail) {
 }
 
 export default function Profile() {
-  const { user, profile, loading, error, updateProfile, signOut, resetPassword, updatePassword } = useAuth();
+  const { user, profile, subscription, loading, error, updateProfile, resetPassword, updatePassword } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [meta, setMeta] = useState(() => {
@@ -59,7 +60,6 @@ export default function Profile() {
     goal: meta?.goal || 'Build discipline, strength, and clarity.',
   });
   const [localError, setLocalError] = useState('');
-  const [signingOut, setSigningOut] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -72,6 +72,8 @@ export default function Profile() {
   const equipped = readJSON(EQUIPPED_KEY, {});
   const unlocked = getUnlockedAchievements();
   const rankData = useMemo(() => calculateRank(Number(profile?.total_rp ?? getTotalRP())), [profile?.total_rp]);
+  const access = useMemo(() => getPlanAccess({ user, profile, subscription }), [profile, subscription, user]);
+  const playerLevel = useMemo(() => getPlayerLevel(profile), [profile]);
   const featuredAchievements = ACHIEVEMENTS.map((achievement) => ({
     ...achievement,
     unlocked: unlocked.some((entry) => entry?.id === achievement?.id),
@@ -116,24 +118,6 @@ export default function Profile() {
     });
     emitEvent('statUpdated', { type: 'profile', profile: nextMeta });
     toast?.success?.('Profile updated.');
-  }
-
-  async function handleSignOut(event) {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    setLocalError('');
-    setSigningOut(true);
-
-    const result = await signOut?.();
-    setSigningOut(false);
-
-    if (result?.error) {
-      setLocalError(result?.error || 'Sign out could not be completed right now.');
-      return;
-    }
-
-    toast?.success?.('You have signed out.');
-    navigate('/login', { replace: true });
   }
 
   function openPasswordModal() {
@@ -270,13 +254,10 @@ export default function Profile() {
               <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-shadow-textMuted">Current Goal</span>
               <textarea className="mt-1.5 min-h-20 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" onChange={(event) => updateField('goal', event?.target?.value || '')} value={form?.goal} />
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button type="submit">
+            <div>
+              <Button className="w-full" type="submit">
                 <Save className="h-4 w-4" aria-hidden="true" />
                 Save Profile
-              </Button>
-              <Button loading={signingOut} onClick={handleSignOut} type="button" variant="ghost">
-                Sign Out
               </Button>
             </div>
           </form>
@@ -296,6 +277,69 @@ export default function Profile() {
             </Button>
           </Card>
         </div>
+      </section>
+
+      <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card bodyClassName="p-4 sm:p-5" subtitle="Avatar styles unlock with your Shadow Ascent tier." title="Avatar Access" icon={ImageIcon}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <AvatarAccessCard icon={UserRound} name="Basic Avatar" unlocked />
+            <AvatarAccessCard
+              imageUrl={profile?.avatar_url}
+              icon={ImageIcon}
+              name="Image Avatar"
+              onUpgrade={() => navigate('/subscription')}
+              unlocked={access?.avatar?.image}
+            />
+            <AvatarAccessCard
+              comingSoon
+              icon={Sparkles}
+              name="AI Body Shape Avatar"
+              onUpgrade={() => navigate('/subscription')}
+              unlocked={access?.avatar?.aiBodyShape}
+            />
+            <AvatarAccessCard
+              comingSoon
+              icon={Crown}
+              name="Animated Avatar"
+              onUpgrade={() => navigate('/subscription')}
+              unlocked={access?.avatar?.animated}
+            />
+          </div>
+        </Card>
+
+        <Card
+          bodyClassName="p-4 sm:p-5"
+          subtitle={`Level ${playerLevel}. These rewards are earned only through leveling and cannot be purchased.`}
+          title="Level Rewards"
+          icon={Gift}
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            {LEVEL_REWARDS.map((reward) => {
+              const unlockedReward = playerLevel >= reward?.level;
+              return (
+                <article
+                  className={`rounded-2xl border p-4 ${
+                    unlockedReward ? 'border-shadow-gold/35 bg-shadow-gold/10' : 'border-white/10 bg-white/[0.03]'
+                  }`}
+                  key={reward?.id}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-shadow-purpleLight">Level {reward?.level}</p>
+                      <h3 className="mt-2 font-heading text-lg font-bold text-shadow-gold">{reward?.name}</h3>
+                    </div>
+                    {unlockedReward ? (
+                      <CheckCircle2 className="h-5 w-5 shrink-0 text-shadow-green" aria-hidden="true" />
+                    ) : (
+                      <Lock className="h-5 w-5 shrink-0 text-shadow-textMuted" aria-hidden="true" />
+                    )}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">{reward?.description}</p>
+                </article>
+              );
+            })}
+          </div>
+        </Card>
       </section>
 
       <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[0.8fr_1.2fr]">
@@ -374,6 +418,34 @@ export default function Profile() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+function AvatarAccessCard({ comingSoon = false, icon: Icon, imageUrl = '', name, onUpgrade, unlocked = false }) {
+  return (
+    <article className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
+      <div className="flex items-center gap-3">
+        {imageUrl && unlocked ? (
+          <img alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" src={imageUrl} />
+        ) : (
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-shadow-purple/35 bg-black/25">
+            <Icon className="h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
+          </span>
+        )}
+        <div className="min-w-0">
+          <h3 className="font-heading text-lg font-bold text-shadow-gold">{name}</h3>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-shadow-textMuted">
+            {comingSoon ? 'Premium / Coming Soon' : unlocked ? 'Unlocked' : 'Paid Plan'}
+          </p>
+        </div>
+      </div>
+      {!unlocked ? (
+        <Button className="mt-3 w-full" onClick={onUpgrade} size="sm" type="button" variant="ghost">
+          <Lock className="h-4 w-4" aria-hidden="true" />
+          View Plans
+        </Button>
+      ) : null}
+    </article>
   );
 }
 

@@ -1,7 +1,9 @@
 import { MAX_RANK, RANKS } from '../config/rankSystem.js';
+import { getRankGift } from './planAccess.js';
 
 const TOTAL_RP_KEY = 'shadowAscentTotalRP';
 const RP_HISTORY_KEY = 'shadowAscentRPHistory';
+const RANK_GIFTS_KEY = 'shadowAscentRankGifts';
 
 function safeNumber(value, fallback = 0) {
   const parsedValue = Number(value);
@@ -98,6 +100,38 @@ export function getRPHistory() {
   return Array.isArray(history) ? history : [];
 }
 
+export function getRankGifts() {
+  const gifts = readJSON(RANK_GIFTS_KEY, []);
+  return Array.isArray(gifts) ? gifts : [];
+}
+
+function grantRankGift(previousRank, nextRank) {
+  const gift = getRankGift(previousRank?.rankId, nextRank?.rankId);
+  if (!gift?.id) {
+    return null;
+  }
+
+  const gifts = getRankGifts();
+  const existingGift = gifts.find((entry) => entry?.id === gift?.id);
+  if (existingGift?.id) {
+    return null;
+  }
+
+  const awardedGift = {
+    ...gift,
+    fromRank: previousRank?.rankName || '',
+    toRank: nextRank?.rankName || '',
+    awardedAt: new Date().toISOString(),
+  };
+  const saved = writeJSON(RANK_GIFTS_KEY, [awardedGift, ...gifts]);
+  if (!saved) {
+    return null;
+  }
+
+  emitEvent('rankGiftGranted', { gift: awardedGift });
+  return awardedGift;
+}
+
 export function getNextRankInfo(rankData) {
   const currentRankData = rankData || calculateRank(getTotalRP());
   const rankIndex = RANKS.findIndex((rank) => rank?.id === currentRankData?.rankId);
@@ -159,7 +193,8 @@ export function addRP(amount, source = 'unknown') {
   emitEvent('rpUpdated', { amount: safeAmount, source, totalRP: nextTotal, rankData: nextRank });
 
   if (nextRank?.rankId !== previousRank?.rankId) {
-    emitEvent('rankUp', { previousRank, nextRank, totalRP: nextTotal, source });
+    const rankGift = grantRankGift(previousRank, nextRank);
+    emitEvent('rankUp', { previousRank, nextRank, totalRP: nextTotal, source, rankGift });
   }
 
   return {
