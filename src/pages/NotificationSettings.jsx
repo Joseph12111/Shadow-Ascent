@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlarmClock, Bell, BellOff, Clock, ShieldAlert, Volume2, Zap } from 'lucide-react';
+import { AlarmClock, Bell, BellOff, BellRing, CheckCircle2, Clock, ShieldAlert, Smartphone, Zap } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import {
   getNotificationPermission,
+  getNotificationSupport,
   NOTIFICATION_CHANNELS,
   readNotificationSettings,
   requestNotificationPermission,
   saveNotificationSettings,
+  showBrowserNotification,
   syncNotificationSettingsFromSupabase,
 } from '../utils/notificationSystem.js';
 
@@ -34,6 +36,8 @@ export default function NotificationSettings() {
   const [settings, setSettings] = useState(() => readNotificationSettings());
   const [permission, setPermission] = useState(() => getNotificationPermission());
   const [localError, setLocalError] = useState('');
+  const [testing, setTesting] = useState(false);
+  const support = useMemo(() => getNotificationSupport(), []);
   const empty = false;
   const permissionWarning = permission === 'denied' || permission === 'unsupported';
   const enabledChannels = useMemo(
@@ -95,6 +99,64 @@ export default function NotificationSettings() {
       permissionAsked: true,
       permissionSkipped: false,
     });
+  }
+
+  async function sendTestNotification() {
+    setTesting(true);
+    setLocalError('');
+
+    try {
+      let nextPermission = getNotificationPermission();
+      if (nextPermission === 'default') {
+        nextPermission = await requestNotificationPermission();
+        setPermission(nextPermission);
+      }
+
+      if (nextPermission !== 'granted') {
+        setLocalError(
+          nextPermission === 'unsupported'
+            ? 'This browser does not support web notifications. Use the in-app reminder fallback.'
+            : 'Notification permission is blocked. Enable it in your browser or device settings, then try again.',
+        );
+        toast?.warning?.('Test reminder shown inside Shadow Ascent because system notifications are unavailable.', 'Test Quest Alert');
+        return;
+      }
+
+      const nextSettings = saveNotificationSettings(user, {
+        ...(settings || {}),
+        enabled: true,
+        permissionAsked: true,
+        permissionSkipped: false,
+      });
+      setSettings(nextSettings);
+
+      const delivery = await showBrowserNotification(
+        {
+          title: 'Quest Assistant Ready',
+          body: 'Test successful. Shadow Ascent reminders can reach this device.',
+          tag: `shadow-ascent-test-${Date.now()}`,
+          url: '/notifications',
+        },
+        nextSettings,
+        {
+          sound: true,
+          soundName: 'soft-chime',
+          vibration: true,
+        },
+      );
+
+      if (delivery?.shown) {
+        toast?.success?.('System test notification sent.', 'Quest Assistant Ready');
+      } else {
+        setLocalError('The browser accepted permission but could not display a system notification. The in-app fallback is working.');
+        toast?.warning?.('In-app test reminder delivered. Install the app or review device notification settings for system alerts.', 'Test Quest Alert');
+      }
+    } catch {
+      setLocalError('The test notification could not be delivered. Review browser or device notification settings.');
+      toast?.warning?.('In-app reminder fallback is active.', 'Test Quest Alert');
+    } finally {
+      setTesting(false);
+    }
   }
 
   function updateSetting(field, value) {
@@ -166,6 +228,10 @@ export default function NotificationSettings() {
               <Button onClick={enableNotifications} disabled={permission === 'unsupported'}>
                 <Bell className="h-4 w-4" aria-hidden="true" />
                 Allow Notifications
+              </Button>
+              <Button disabled={testing} onClick={sendTestNotification} variant="secondary">
+                <BellRing className="h-4 w-4" aria-hidden="true" />
+                {testing ? 'Sending Test...' : 'Send Test Notification'}
               </Button>
               <Button onClick={disableAll} variant="ghost">
                 <BellOff className="h-4 w-4" aria-hidden="true" />
@@ -244,6 +310,52 @@ export default function NotificationSettings() {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-shadow-textSecondary">
           Current time zone: <span className="font-semibold text-shadow-gold">{settings?.timeZone || 'Local'}</span>. Change your device time zone to update reminder delivery.
         </div>
+      </Card>
+
+      <Card title="Device Setup" subtitle="System notifications depend on browser and phone permissions." icon={Smartphone}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-shadow-text">
+              <CheckCircle2 className={`h-4 w-4 ${support?.notificationsSupported ? 'text-shadow-green' : 'text-shadow-red'}`} aria-hidden="true" />
+              Notification API
+            </div>
+            <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">
+              {support?.notificationsSupported ? 'Supported by this browser.' : 'Unsupported here. In-app alerts remain available while Shadow Ascent is open.'}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-shadow-text">
+              <CheckCircle2 className={`h-4 w-4 ${support?.serviceWorkerSupported ? 'text-shadow-green' : 'text-shadow-red'}`} aria-hidden="true" />
+              PWA Delivery
+            </div>
+            <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">
+              {support?.serviceWorkerSupported ? 'Service-worker delivery is available in the production app.' : 'This browser cannot use PWA notification delivery.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-shadow-purple/25 bg-shadow-purple/10 p-4 text-sm leading-6 text-shadow-textSecondary">
+          {support?.isIOS && !support?.standalone
+            ? 'On iPhone or iPad, add Shadow Ascent to the Home Screen, open the installed app, then tap Allow Notifications.'
+            : support?.isAndroid && !support?.standalone
+              ? 'For the strongest Android delivery, install Shadow Ascent to your Home Screen and allow notifications when prompted.'
+              : 'Keep device notifications enabled for Shadow Ascent. Installed PWA delivery is the most reliable mobile option.'}
+          <span className="mt-2 block">
+            Scheduled checks run while the app is open or resumes. A fully closed browser cannot guarantee alarm-style delivery without a remote push service.
+          </span>
+        </div>
+
+        {permission === 'denied' ? (
+          <div className="mt-4 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm leading-6 text-shadow-textSecondary">
+            Permission is denied. Open your browser or phone settings, find Shadow Ascent site permissions, enable Notifications, then return and send a test.
+          </div>
+        ) : null}
+
+        {!support?.secureContext ? (
+          <div className="mt-4 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm leading-6 text-shadow-textSecondary">
+            Notifications require a secure HTTPS connection. Open the production Shadow Ascent site to enable system alerts.
+          </div>
+        ) : null}
       </Card>
     </div>
   );

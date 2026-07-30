@@ -155,6 +155,7 @@ export function readNotificationSettings() {
   return {
     ...defaults,
     ...stored,
+    timeZone: defaults?.timeZone,
     quietHours: {
       ...defaults?.quietHours,
       ...(stored?.quietHours || {}),
@@ -241,6 +242,39 @@ export function getNotificationPermission() {
   }
 }
 
+export function getNotificationSupport() {
+  try {
+    const notificationsSupported = 'Notification' in globalThis;
+    const serviceWorkerSupported = 'serviceWorker' in (globalThis?.navigator || {});
+    const secureContext = Boolean(globalThis?.isSecureContext);
+    const standalone = Boolean(
+      globalThis?.matchMedia?.('(display-mode: standalone)')?.matches
+      || globalThis?.navigator?.standalone,
+    );
+    const userAgent = globalThis?.navigator?.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/i.test(userAgent);
+    const isAndroid = /Android/i.test(userAgent);
+
+    return {
+      notificationsSupported,
+      serviceWorkerSupported,
+      secureContext,
+      standalone,
+      isIOS,
+      isAndroid,
+    };
+  } catch {
+    return {
+      notificationsSupported: false,
+      serviceWorkerSupported: false,
+      secureContext: false,
+      standalone: false,
+      isIOS: false,
+      isAndroid: false,
+    };
+  }
+}
+
 export async function requestNotificationPermission() {
   try {
     if (!('Notification' in globalThis)) {
@@ -276,38 +310,134 @@ export function createChecklistNotificationPayload(task) {
     title: reminder?.message || `Quest Reminder - ${task?.title || 'Checklist Task'}`,
     body: `Complete ${task?.title || 'your task'} to protect your streak.`,
     tag: `checklist-${task?.id || 'task'}`,
+    url: '/checklist',
   };
 }
 
-export function showBrowserNotification(payload, settings) {
-  if (!settings?.enabled || getNotificationPermission() !== 'granted') {
+function shouldPlayReminderSound(settings, reminder) {
+  return Boolean(
+    settings?.sound
+    && reminder?.sound !== false
+    && reminder?.soundName !== 'silent',
+  );
+}
+
+export async function playReminderSound(settings, reminder = {}) {
+  if (!shouldPlayReminderSound(settings, reminder)) {
     return false;
   }
 
   try {
-    const notification = new globalThis.Notification(payload?.title || 'Shadow Ascent', {
-      body: payload?.body || 'Your quest assistant has a reminder.',
-      tag: payload?.tag || `shadow-ascent-${Date.now()}`,
-      renotify: false,
-      silent: !settings?.sound,
-    });
-
-    notification.onclick = () => {
-      try {
-        globalThis?.focus?.();
-        globalThis?.location?.assign?.('/checklist');
-      } catch {
-        undefined;
-      }
-    };
-
-    if (settings?.vibration && globalThis?.navigator?.vibrate) {
-      globalThis?.navigator?.vibrate?.([120, 80, 120]);
+    const AudioContextClass = globalThis?.AudioContext || globalThis?.webkitAudioContext;
+    if (!AudioContextClass) {
+      return false;
     }
 
+    const context = new AudioContextClass();
+    if (context?.state === 'suspended') {
+      await context?.resume?.();
+    }
+
+    const oscillator = context?.createOscillator?.();
+    const gain = context?.createGain?.();
+    if (!oscillator || !gain) {
+      await context?.close?.();
+      return false;
+    }
+
+    const soundName = reminder?.soundName || 'soft-chime';
+    const frequency = soundName === 'quest-horn' ? 392 : soundName === 'crystal-ping' ? 880 : 660;
+    const now = context?.currentTime || 0;
+    oscillator.type = soundName === 'quest-horn' ? 'triangle' : 'sine';
+    oscillator.frequency.setValueAtTime(frequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(220, frequency * 0.72), now + 0.32);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.45);
+    oscillator.addEventListener?.('ended', () => {
+      context?.close?.().catch?.(() => undefined);
+    });
     return true;
   } catch {
     return false;
+  }
+}
+
+export async function showBrowserNotification(payload, settings, reminder = {}) {
+  if (!settings?.enabled || getNotificationPermission() !== 'granted') {
+    return {
+      shown: false,
+      reason: getNotificationPermission() === 'granted' ? 'disabled' : 'permission',
+      soundPlayed: false,
+    };
+  }
+
+  try {
+    const soundEnabled = shouldPlayReminderSound(settings, reminder);
+    const options = {
+      body: payload?.body || 'Your quest assistant has a reminder.',
+      tag: payload?.tag || `shadow-ascent-${Date.now()}`,
+      renotify: false,
+      silent: !soundEnabled,
+      icon: '/icons/icon-192.png',
+      badge: settings?.badges ? '/icons/icon-192.png' : undefined,
+      vibrate: settings?.vibration && reminder?.vibration !== false ? [120, 80, 120] : undefined,
+      data: {
+        url: payload?.url || '/checklist',
+      },
+    };
+
+    let shown = false;
+    const registration = await globalThis?.navigator?.serviceWorker?.getRegistration?.();
+
+    if (registration?.active && registration?.showNotification) {
+      await registration.showNotification(payload?.title || 'Shadow Ascent', options);
+      shown = true;
+    } else if (globalThis?.Notification) {
+      const notification = new globalThis.Notification(payload?.title || 'Shadow Ascent', options);
+      notification.onclick = () => {
+        try {
+          globalThis?.focus?.();
+          globalThis?.location?.assign?.(payload?.url || '/checklist');
+        } catch {
+          return;
+        }
+      };
+      shown = true;
+    }
+
+    if (settings?.vibration && reminder?.vibration !== false && globalThis?.navigator?.vibrate) {
+      try {
+        globalThis?.navigator?.vibrate?.([120, 80, 120]);
+      } catch {
+        undefined;
+      }
+    }
+
+    if (shown && settings?.badges && globalThis?.navigator?.setAppBadge) {
+      try {
+        await globalThis?.navigator?.setAppBadge?.(1);
+      } catch {
+        undefined;
+      }
+    }
+
+    const soundPlayed = await playReminderSound(settings, reminder);
+    return {
+      shown,
+      reason: shown ? 'shown' : 'unavailable',
+      soundPlayed,
+    };
+  } catch {
+    return {
+      shown: false,
+      reason: 'failed',
+      soundPlayed: false,
+    };
   }
 }
 
@@ -318,14 +448,23 @@ export function hasDelivered(notificationKey) {
 
 export function markDelivered(notificationKey) {
   const delivered = readJSON(NOTIFICATION_DELIVERED_KEY, {});
+  const cutoff = Date.now() - (45 * 24 * 60 * 60 * 1000);
+  const recentDelivered = Object.entries(delivered || {}).reduce((nextDelivered, [key, deliveredAt]) => {
+    const timestamp = new Date(deliveredAt)?.getTime?.();
+    if (Number.isFinite(timestamp) && timestamp >= cutoff) {
+      nextDelivered[key] = deliveredAt;
+    }
+    return nextDelivered;
+  }, {});
+
   writeJSON(NOTIFICATION_DELIVERED_KEY, {
-    ...(delivered || {}),
+    ...recentDelivered,
     [notificationKey]: new Date().toISOString(),
   });
 }
 
-export function getReminderDeliveryKey(task, date = new Date()) {
-  return `${task?.id || 'task'}-${getLocalDateKey(date)}-${task?.reminder?.reminderTime || ''}`;
+export function getReminderDeliveryKey(task, date = new Date(), reminderTime = '') {
+  return `${task?.id || 'task'}-${getLocalDateKey(date)}-${reminderTime || task?.reminder?.reminderTime || ''}`;
 }
 
 export function shouldTriggerTaskReminder(task, settings, date = new Date()) {
@@ -339,7 +478,11 @@ export function shouldTriggerTaskReminder(task, settings, date = new Date()) {
     return false;
   }
 
-  const reminderTime = reminder?.reminderTime || '';
+  const snoozedUntil = reminder?.snoozedUntil ? new Date(reminder?.snoozedUntil) : null;
+  const snoozeIsValid = Number.isFinite(snoozedUntil?.getTime?.());
+  const reminderTime = snoozeIsValid && getLocalDateKey(snoozedUntil) === getLocalDateKey(date)
+    ? getLocalTimeKey(snoozedUntil)
+    : reminder?.reminderTime || '';
   const currentTime = getLocalTimeKey(date);
   if (!reminderTime || currentTime !== reminderTime) {
     return false;
@@ -353,6 +496,14 @@ export function shouldTriggerTaskReminder(task, settings, date = new Date()) {
   const weekdayCode = weekdayCodes?.[dayIndex] || 'MO';
 
   if (skippedDates?.includes(dateKey)) {
+    return false;
+  }
+
+  if (snoozeIsValid && currentTime === getLocalTimeKey(snoozedUntil) && dateKey === getLocalDateKey(snoozedUntil)) {
+    return !hasDelivered(getReminderDeliveryKey(task, date, `snooze-${reminderTime}`));
+  }
+
+  if (reminderDate > dateKey) {
     return false;
   }
 
@@ -372,7 +523,48 @@ export function shouldTriggerTaskReminder(task, settings, date = new Date()) {
     return false;
   }
 
+  if (reminder?.repeatType === 'weekly') {
+    const startDate = new Date(`${reminderDate}T12:00:00`);
+    if (!Number.isFinite(startDate?.getTime?.()) || startDate?.getDay?.() !== dayIndex) {
+      return false;
+    }
+  }
+
+  if (reminder?.repeatType === 'monthly' && Number(reminderDate?.slice?.(8, 10)) !== Number(dateKey?.slice?.(8, 10))) {
+    return false;
+  }
+
+  if (reminder?.repeatType === 'custom' && (reminder?.repeat || [])?.length && !(reminder?.repeat || [])?.includes(weekdayCode)) {
+    return false;
+  }
+
   return !hasDelivered(getReminderDeliveryKey(task, date));
+}
+
+export function findDueTaskReminder(task, settings, windowStart, windowEnd = new Date()) {
+  try {
+    const end = windowEnd instanceof Date ? windowEnd : new Date(windowEnd);
+    const start = windowStart instanceof Date ? windowStart : new Date(windowStart);
+    if (!Number.isFinite(start?.getTime?.()) || !Number.isFinite(end?.getTime?.()) || start > end) {
+      return null;
+    }
+
+    const candidate = new Date(start);
+    candidate.setSeconds(0, 0);
+    const finalMinute = new Date(end);
+    finalMinute.setSeconds(0, 0);
+
+    while (candidate <= finalMinute) {
+      if (shouldTriggerTaskReminder(task, settings, candidate)) {
+        return new Date(candidate);
+      }
+      candidate.setMinutes(candidate.getMinutes() + 1);
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 export function shouldTriggerSmartReminder(settings, reminderId, date = new Date()) {

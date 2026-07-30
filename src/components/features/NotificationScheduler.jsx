@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlarmClock, Bell, X } from 'lucide-react';
 import Button from '../ui/Button.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useToast } from '../../hooks/useToast.js';
 import {
   createChecklistNotificationPayload,
+  findDueTaskReminder,
   getNotificationPermission,
   getReminderDeliveryKey,
+  getLocalTimeKey,
   markSmartReminderShown,
   markDelivered,
   NOTIFICATION_SETTINGS_KEY,
@@ -14,7 +16,6 @@ import {
   readNotificationSettings,
   requestNotificationPermission,
   saveNotificationSettings,
-  shouldTriggerTaskReminder,
   shouldTriggerSmartReminder,
   showBrowserNotification,
   syncNotificationSettingsFromSupabase,
@@ -28,6 +29,8 @@ export default function NotificationScheduler() {
   const [settings, setSettings] = useState(() => readNotificationSettings());
   const [permission, setPermission] = useState(() => getNotificationPermission());
   const [promptOpen, setPromptOpen] = useState(false);
+  const checkingRef = useRef(false);
+  const lastCheckRef = useRef(new Date(Date.now() - 70000));
 
   const shouldAskPermission = useMemo(
     () => Boolean(user?.id && !settings?.permissionAsked && !settings?.permissionSkipped && permission === 'default'),
@@ -83,53 +86,93 @@ export default function NotificationScheduler() {
   }, []);
 
   useEffect(() => {
-    if (!settings?.enabled || permission !== 'granted') {
+    if (!settings?.enabled) {
       return undefined;
     }
 
-    function checkReminders() {
+    async function checkReminders() {
+      if (checkingRef?.current) {
+        return;
+      }
+
+      checkingRef.current = true;
       const tasks = readJSON(TASKS_KEY, []);
       const safeTasks = Array.isArray(tasks) ? tasks : [];
       const now = new Date();
+      const catchUpLimit = new Date(now?.getTime?.() - (5 * 60 * 1000));
+      const windowStart = lastCheckRef?.current > catchUpLimit ? lastCheckRef?.current : catchUpLimit;
+      lastCheckRef.current = now;
 
-      safeTasks.forEach((task) => {
-        if (!shouldTriggerTaskReminder(task, settings, now)) {
-          return;
+      try {
+        for (const task of safeTasks) {
+          const dueAt = findDueTaskReminder(task, settings, windowStart, now);
+          if (!dueAt) {
+            continue;
+          }
+
+          const reminder = task?.reminder || {};
+          const isSnoozedOccurrence = reminder?.snoozedUntil
+            && getLocalTimeKey(new Date(reminder?.snoozedUntil)) === getLocalTimeKey(dueAt);
+          const notificationKey = getReminderDeliveryKey(
+            task,
+            dueAt,
+            isSnoozedOccurrence ? `snooze-${getLocalTimeKey(dueAt)}` : '',
+          );
+          const payload = createChecklistNotificationPayload(task);
+          const delivery = await showBrowserNotification(payload, settings, reminder);
+          markDelivered(notificationKey);
+
+          if (delivery?.shown) {
+            toast?.achievement?.('Checklist alarm delivered. Open the task to complete it.', payload?.title);
+          } else {
+            toast?.warning?.(payload?.body || 'A checklist quest is due now.', payload?.title);
+          }
         }
 
-        const notificationKey = getReminderDeliveryKey(task, now);
-        const payload = createChecklistNotificationPayload(task);
-        const shown = showBrowserNotification(payload, settings);
-        markDelivered(notificationKey);
-
-        if (shown) {
-          toast?.achievement?.('Checklist alarm delivered. Open the task to complete, snooze, or skip today.', payload?.title);
-        }
-      });
-
-      const openTasks = safeTasks.filter((task) => !task?.completed);
-      if (openTasks?.length && shouldTriggerSmartReminder(settings, 'open-checklist-quests', now)) {
-        const shown = showBrowserNotification(
-          {
+        const openTasks = safeTasks.filter((task) => !task?.completed);
+        if (openTasks?.length && shouldTriggerSmartReminder(settings, 'open-checklist-quests', now)) {
+          const payload = {
             title: 'Your Streak Is at Risk',
             body: `${openTasks?.length} checklist quest${openTasks?.length === 1 ? '' : 's'} still await completion.`,
             tag: 'smart-open-checklist-quests',
-          },
-          settings,
-        );
-        markSmartReminderShown('open-checklist-quests', now);
+            url: '/checklist',
+          };
+          const delivery = await showBrowserNotification(payload, settings);
+          markSmartReminderShown('open-checklist-quests', now);
 
-        if (shown) {
-          toast?.warning?.('Smart reminder sent for unfinished checklist quests.');
+          if (delivery?.shown) {
+            toast?.warning?.('Smart reminder sent for unfinished checklist quests.');
+          } else {
+            toast?.warning?.(payload?.body, payload?.title);
+          }
         }
+      } finally {
+        checkingRef.current = false;
       }
     }
 
-    checkReminders();
-    const interval = globalThis?.setInterval?.(checkReminders, 30000);
+    checkReminders().catch(() => {
+      checkingRef.current = false;
+    });
+    const interval = globalThis?.setInterval?.(() => {
+      checkReminders().catch(() => {
+        checkingRef.current = false;
+      });
+    }, 15000);
+    const handleVisibility = () => {
+      if (globalThis?.document?.visibilityState === 'visible') {
+        checkReminders().catch(() => {
+          checkingRef.current = false;
+        });
+      }
+    };
+    globalThis?.document?.addEventListener?.('visibilitychange', handleVisibility);
+    globalThis?.addEventListener?.('focus', handleVisibility);
 
     return () => {
       globalThis?.clearInterval?.(interval);
+      globalThis?.document?.removeEventListener?.('visibilitychange', handleVisibility);
+      globalThis?.removeEventListener?.('focus', handleVisibility);
     };
   }, [permission, settings, toast]);
 

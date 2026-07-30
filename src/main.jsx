@@ -9,6 +9,18 @@ import './styles/index.css';
 
 const rootElement = document?.getElementById?.('root');
 
+if (import.meta.env?.PROD && 'serviceWorker' in (globalThis?.navigator || {})) {
+  globalThis?.addEventListener?.('load', () => {
+    try {
+      globalThis?.navigator?.serviceWorker
+        ?.register?.('/service-worker.js', { scope: '/' })
+        ?.catch?.(() => undefined);
+    } catch {
+      return;
+    }
+  });
+}
+
 if (rootElement) {
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
