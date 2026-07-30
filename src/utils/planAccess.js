@@ -105,8 +105,8 @@ export function getPlanAccess({ user, profile, subscription } = {}) {
       animated: owner || tier >= 3,
     },
     aiLimits: {
-      workoutGenerator: owner ? Infinity : tier >= 2 ? 4 : 2,
-      mealPlanner: owner ? Infinity : tier >= 2 ? 4 : 2,
+      workoutGenerator: owner ? Infinity : tier >= 2 ? 4 : tier >= 1 ? 2 : 1,
+      mealPlanner: owner ? Infinity : tier >= 2 ? 4 : tier >= 1 ? 2 : 1,
       mealScanner: mealScannerLimit,
     },
     mealScanner: {

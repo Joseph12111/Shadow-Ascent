@@ -14,8 +14,8 @@ export const SUBSCRIPTION_PLANS = [
     annualPrice: 0,
     badge: 'Free',
     included: [
-      '2 Workout Plan Generations',
-      '2 Meal Plan Generations',
+      '1 Workout Plan Generation',
+      '1 Meal Plan Generation',
       '1 Meal Scan every 10 levels',
       'Character Progression',
       'Daily Quests',

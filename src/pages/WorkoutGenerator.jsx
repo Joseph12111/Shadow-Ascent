@@ -253,7 +253,7 @@ export function UpgradeModal({ open, onClose, featureName }) {
   );
 }
 
-export function UsageBanner({ feature, user, title }) {
+export function UsageBanner({ feature, user, title, isOpen, onToggle }) {
   const { profile, subscription } = useAuth();
   const access = getPlanAccess({ user, profile, subscription });
   const usage = getUsageSnapshot(user, profile, subscription)?.[feature];
@@ -269,13 +269,46 @@ export function UsageBanner({ feature, user, title }) {
           ? `${usage?.remaining ?? 0} of ${usage?.limit ?? 0} scans remaining today.`
           : `${usage?.remaining ?? 0} of ${usage?.limit ?? 0} generations remaining this month.`;
 
+  if (onToggle) {
+    return (
+      <div className="relative rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
+        <div className="min-w-0 pr-12">
+          <p className="font-heading text-lg font-bold text-shadow-gold">{title}</p>
+          <p className="mt-1 max-w-md text-sm leading-6 text-shadow-textSecondary">{usageMessage}</p>
+          <div className="mt-3">
+            {owner ? (
+              <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-shadow-gold/30 bg-shadow-gold/10 px-3 py-1 text-xs font-semibold text-shadow-gold">
+                <Crown className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Founder/Admin
+              </span>
+            ) : (
+              <span className="inline-flex rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-semibold text-shadow-textSecondary">
+                {usage?.used || 0}/{usage?.limit || 0}
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          aria-expanded={Boolean(isOpen)}
+          aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${title}`}
+          className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-shadow-purple/30 bg-black/20 text-shadow-purpleLight transition hover:border-shadow-gold/40 hover:text-shadow-gold focus:outline-none focus:ring-2 focus:ring-shadow-gold/60"
+          onClick={onToggle}
+          type="button"
+        >
+          <ChevronDown
+            className={`h-5 w-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
       <div>
         <p className="font-heading text-lg font-bold text-shadow-gold">{title}</p>
-        <p className="text-sm text-shadow-textSecondary">
-          {usageMessage}
-        </p>
+        <p className="text-sm text-shadow-textSecondary">{usageMessage}</p>
       </div>
       {owner ? (
         <span className="inline-flex items-center gap-2 rounded-full border border-shadow-gold/30 bg-shadow-gold/10 px-3 py-1 text-xs font-semibold text-shadow-gold">
@@ -379,6 +412,7 @@ export default function WorkoutGenerator() {
     const storedSchedule = readStoredJSON(WEEKLY_WORKOUT_SCHEDULE_KEY, null);
     return storedSchedule?.assignments && typeof storedSchedule?.assignments === 'object' ? normalizeScheduleAssignments(storedSchedule?.assignments) : {};
   });
+  const [generatorOpen, setGeneratorOpen] = useState(true);
   const [scheduleOpen, setScheduleOpen] = useState(true);
   const [expandedHistory, setExpandedHistory] = useState({});
   const [usedHistoryId, setUsedHistoryId] = useState(() => {
@@ -393,6 +427,11 @@ export default function WorkoutGenerator() {
   const [activeFormStep, setActiveFormStep] = useState('goal');
   const empty = !isAIServiceConfigured();
   const hasErrors = useMemo(() => Object.keys(formErrors || {})?.length > 0, [formErrors]);
+  const workoutUsage = useMemo(
+    () => getUsageSnapshot(user, profile, subscription)?.workoutGenerator,
+    [profile, subscription, user],
+  );
+  const canOpenGenerator = owner || Number(workoutUsage?.remaining || 0) > 0;
   const activePlan = useMemo(() => {
     if (!savedPlans?.length || !selectedPlanId) {
       return null;
@@ -545,6 +584,20 @@ export default function WorkoutGenerator() {
       [field]: '',
     }));
     setLocalError('');
+  }
+
+  function toggleGeneratorPanel() {
+    if (generatorOpen) {
+      setGeneratorOpen(false);
+      return;
+    }
+
+    if (!canOpenGenerator) {
+      setUpgradeOpen(true);
+      return;
+    }
+
+    setGeneratorOpen(true);
   }
 
   function moveToNextFormStep(stepId) {
@@ -893,18 +946,33 @@ Do not omit exercise details, coaching notes, progression rules, or recovery not
 
     syncFeatureUsage('workoutGenerator', response?.usage);
     setResult(formatWorkoutDayLabels(response?.text));
+    setGeneratorOpen(false);
     toast?.success?.('Workout plan generated. Save it to history when ready.');
   }
 
   return (
     <div className="min-w-0 w-full overflow-x-hidden space-y-6">
       <Card empty={empty} emptyText="Connect Supabase to enable the secure AI service." error={error} loading={loading} subtitle="Secure server-side Responses API generation." title="Workout Generator" icon={Dumbbell}>
-        {!empty ? <UsageBanner feature="workoutGenerator" title="AI Training Forge" user={user} /> : null}
-        {!empty && localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
-        {!empty && hasErrors ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">Fix the highlighted fields to generate a plan.</div> : null}
+        {!empty ? (
+          <UsageBanner
+            feature="workoutGenerator"
+            isOpen={generatorOpen}
+            onToggle={toggleGeneratorPanel}
+            title="AI Training Forge"
+            user={user}
+          />
+        ) : null}
 
         {!empty ? (
-          <form className="mt-6 space-y-4" onSubmit={generateWorkout}>
+          <div
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+              generatorOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              {localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
+              {hasErrors ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">Fix the highlighted fields to generate a plan.</div> : null}
+              <form className="mt-6 space-y-4" onSubmit={generateWorkout}>
             <StepDropdown
               error={formErrors?.goal}
               isOpen={activeFormStep === 'goal'}
@@ -1024,7 +1092,9 @@ Do not omit exercise details, coaching notes, progression rules, or recovery not
                 Generate Workout
               </Button>
             </div>
-          </form>
+              </form>
+            </div>
+          </div>
         ) : null}
       </Card>
 
