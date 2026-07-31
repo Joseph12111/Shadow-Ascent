@@ -35,43 +35,43 @@ function isRestLikeSplitName(value) {
   return /\b(rest|recovery|mobility|deload|off)\b/i.test(String(value || ''));
 }
 
-function getDayNumberFromLine(line) {
-  const cleaned = String(line || '')
-    .replace(/^\s*#+\s*/, '')
-    .replace(/^\s*[-*•\d.)]+\s*/, '')
+function stripWorkoutFormatting(line) {
+  return String(line || '')
+    .replace(/^\s*#{1,6}\s*/, '')
+    .replace(/\*\*/g, '')
     .trim();
-  const match = cleaned.match(/^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*[-–—]\s*)?day\s*(\d+)/i);
+}
+
+function stripListMarker(line) {
+  return stripWorkoutFormatting(line)
+    .replace(/^\s*(?:[-*+\u2022]\s+|\d+\s*[.)]\s+)/, '')
+    .trim();
+}
+
+function getDayNumberFromLine(line) {
+  const cleaned = stripWorkoutFormatting(line).replace(/^\s*[-*+\u2022]\s+/, '').trim();
+  const match = cleaned.match(/^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*(\d+)/i);
   return match?.[1] ? Number(match?.[1]) : null;
 }
 
 function looksLikeDayHeading(line) {
-  const cleaned = String(line || '')
-    .replace(/^\s*#+\s*/, '')
-    .replace(/^\s*[-*•\d.)]+\s*/, '')
-    .trim();
-  return /^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*[-–—]\s*)?day\s*\d+\b/i.test(cleaned);
+  const cleaned = stripWorkoutFormatting(line).replace(/^\s*[-*+\u2022]\s+/, '').trim();
+  return /^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*\d+\b/i.test(cleaned);
 }
 
 function parseSecondsFromText(text) {
   const raw = String(text || '').toLowerCase();
-
-  const minuteMatch = raw.match(/(\d+)\s*(?:min|mins|minute|minutes)\b/);
+  const minuteMatch = raw.match(/(\d+)(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:min|mins|minute|minutes)\b/);
   if (minuteMatch?.[1]) {
     return Number(minuteMatch?.[1]) * 60;
   }
 
-  const secondMatch = raw.match(/(\d+)\s*(?:sec|secs|second|seconds|s)\b/);
-  if (secondMatch?.[1]) {
-    return Number(secondMatch?.[1]);
-  }
-
-  return null;
+  const secondMatch = raw.match(/(\d+)(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:sec|secs|second|seconds|s)\b/);
+  return secondMatch?.[1] ? Number(secondMatch?.[1]) : null;
 }
 
 function cleanWorkoutLine(line) {
-  return String(line || '')
-    .replace(/^\s*[-*â€¢\d.)]+\s*/, '')
-    .trim();
+  return stripListMarker(line);
 }
 
 function getGuidanceText(line) {
@@ -83,109 +83,212 @@ function getGuidanceText(line) {
 function addExerciseGuidance(split, guidance) {
   const text = String(guidance || '').trim();
   const lastExercise = split?.exercises?.[split?.exercises?.length - 1];
-
   if (!text || !lastExercise) {
     return false;
   }
 
   lastExercise.guidance = lastExercise?.guidance ? `${lastExercise?.guidance} ${text}` : text;
-  lastExercise.raw = lastExercise?.raw ? `${lastExercise?.raw}\n(${text})` : `(${text})`;
+  lastExercise.raw = lastExercise?.raw ? `${lastExercise?.raw}\n${text}` : text;
   return true;
 }
 
-function parseExerciseLine(line, index, splitOrder = 0) {
-  const cleaned = String(line || '')
-    .replace(/^\s*[-*•\d.)]+\s*/, '')
-    .trim();
+function firstNumber(value, fallback = 1) {
+  const match = String(value || '').match(/\d+/);
+  return match?.[0] ? Number(match?.[0]) : fallback;
+}
 
-  if (!cleaned || cleaned.length < 3) {
-    return null;
-  }
+function normalizeRange(value) {
+  return String(value || '').replace(/\s*(?:-|\u2013|\u2014)\s*/g, '-').trim();
+}
 
-  if (/^(warm\s*up|cool\s*down|notes?|progression|rules?|recovery notes?|overview|exercises?|main workout|weekly split)\s*:?\s*$/i.test(cleaned)) {
-    return null;
-  }
-
-  const setRepMatch = cleaned.match(/(\d+)\s*[x×]\s*(\d+)/i);
-  const durationMatch = cleaned.match(/(\d+)(?:\s*[-–—]\s*\d+)?\s*(?:sec|secs|second|seconds|min|mins|minute|minutes)\b/i);
-
+function getPrescriptionDetails(line) {
+  const cleaned = cleanWorkoutLine(line);
+  const patterns = [
+    /(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*sets?\s*[x\u00d7]\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)(?:\s*reps?)?/i,
+    /(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*[x\u00d7]\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)(?:\s*reps?)?/i,
+    /(?:[x\u00d7]\s*)?(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*sets?\s*(?:(?:of|:)\s*)?(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)(?:\s*reps?)?/i,
+  ];
+  const setRepMatch = patterns.map((pattern) => cleaned.match(pattern)).find(Boolean) || null;
+  const durationMatch = cleaned.match(/(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*(seconds?|secs?|minutes?|mins?)\b/i);
+  const restMatch = cleaned.match(/^rest\s*:?\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*(seconds?|secs?|minutes?|mins?)\b/i);
   if (!setRepMatch?.[0] && !durationMatch?.[0]) {
     return null;
   }
 
-  const restMatch = cleaned.match(/rest[^0-9]{0,12}(\d+)\s*(sec|secs|second|seconds|min|mins|minute|minutes|s|m)\b/i);
-  const workMatch = cleaned.match(/(?:tempo|work|hold|for)[^0-9]{0,12}(\d+)\s*(sec|secs|second|seconds|min|mins|minute|minutes|s|m)\b/i);
-  const name =
-    cleaned
-      .replace(/\(.*?\)/g, '')
-      .replace(/(\d+\s*[x×]\s*\d+).*/i, '')
-      .replace(/:\s*\d+(?:\s*[-–—]\s*\d+)?\s*(?:sec|secs|second|seconds|min|mins|minute|minutes)\b.*/i, '')
-      .replace(/:\s*$/, '')
-      .trim() || cleaned;
+  const setsText = setRepMatch?.[1] ? normalizeRange(setRepMatch?.[1]) : '1';
+  const repsText = setRepMatch?.[2]
+    ? normalizeRange(setRepMatch?.[2])
+    : durationMatch?.[0]
+      ? durationMatch?.[0].trim()
+      : '1';
 
-  const workSeconds = workMatch?.[1] ? parseSecondsFromText(`${workMatch?.[1]} ${workMatch?.[2] || 'sec'}`) : null;
-  const restSeconds = restMatch?.[1] ? parseSecondsFromText(`${restMatch?.[1]} ${restMatch?.[2] || 'sec'}`) : null;
+  return {
+    sets: firstNumber(setsText),
+    reps: firstNumber(repsText),
+    setsText,
+    repsText,
+    prescription: setRepMatch?.[0]?.trim() || durationMatch?.[0]?.trim() || '',
+    workSeconds: !restMatch?.[0] && durationMatch?.[0] ? parseSecondsFromText(durationMatch?.[0]) : null,
+    restSeconds: restMatch?.[0] ? parseSecondsFromText(restMatch?.[0]) : null,
+  };
+}
 
+function getSectionName(line) {
+  const cleaned = stripWorkoutFormatting(line);
+  const match = cleaned.match(/^(warm[\s-]*up|main workout|cool[\s-]*down|weekly split|progression(?: rules)?|recovery notes?|notes?|overview)(?:\s*\([^)]*\))?\s*:?\s*$/i);
+  if (!match?.[1]) {
+    return '';
+  }
+
+  const section = match?.[1].toLowerCase().replace(/[\s-]+/g, ' ').trim();
+  if (section === 'warm up') {
+    return 'warmup';
+  }
+  if (section === 'cool down') {
+    return 'cooldown';
+  }
+  return section;
+}
+
+function isExerciseSection(section) {
+  return !/^(weekly split|warmup|cooldown|progression|progression rules|recovery notes?|notes?|overview)$/i.test(String(section || ''));
+}
+
+function isGenericExerciseName(value) {
+  return /^(?:warm[\s-]*up|main workout|cool[\s-]*down|rest)(?:\s*\([^)]*\))?\s*:?\s*$/i.test(String(value || '').trim());
+}
+
+function getExerciseLead(line) {
+  const formatted = stripWorkoutFormatting(line);
+  const numbered = formatted.match(/^\s*\d+\s*[.)]\s+(.+)$/);
+  if (numbered?.[1]) {
+    return numbered?.[1].trim();
+  }
+
+  const bullet = formatted.match(/^\s*[-*+\u2022]\s+(.+)$/);
+  if (bullet?.[1]) {
+    const bulletText = bullet?.[1].trim();
+    if (
+      /^(?:rest|sets?|reps?|tempo|hold|use|keep|try|pause|same as|same style)/i.test(bulletText) ||
+      /^\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:sets?\b|[x\u00d7])/i.test(bulletText)
+    ) {
+      return '';
+    }
+    return getPrescriptionDetails(bulletText) ? bulletText : '';
+  }
+
+  if (/^[a-z]/i.test(formatted) && !/^(?:rest|sets?|reps?|tempo|hold|use|keep|try|pause|same as|same style)/i.test(formatted)) {
+    return getPrescriptionDetails(formatted) ? formatted : '';
+  }
+  return '';
+}
+
+function getExerciseName(lead) {
+  const withoutPrescription = String(lead || '')
+    .replace(/\s*(?::|-|\u2013|\u2014)\s*(?=\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:sets?\s*)?[x\u00d7])/i, '\n')
+    .replace(/\s+(?=\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:sets?\s*)?[x\u00d7]\s*\d+)/i, '\n')
+    .split('\n')?.[0]
+    ?.replace(/\s*\([^)]*\)\s*$/, '')
+    ?.replace(/\s*:\s*$/, '')
+    ?.trim();
+  return withoutPrescription || cleanWorkoutLine(lead);
+}
+
+function createExercise(line, index, splitOrder = 0) {
+  const lead = getExerciseLead(line);
+  const name = getExerciseName(lead);
+  if (!lead || !name || isGenericExerciseName(name)) {
+    return null;
+  }
+
+  const details = getPrescriptionDetails(lead);
   return {
     id: `exercise-${splitOrder}-${index}-${slugify(name) || index}`,
     name,
-    sets: Number(setRepMatch?.[1] || 1),
-    reps: Number(setRepMatch?.[2] || 1),
-    raw: cleaned,
+    sets: Number(details?.sets || 1),
+    reps: Number(details?.reps || 1),
+    setsText: details?.setsText || '',
+    repsText: details?.repsText || '',
+    prescription: details?.prescription || '',
+    raw: cleanWorkoutLine(line),
     guidance: '',
     timing: {
-      workSeconds: workSeconds && workSeconds > 0 ? workSeconds : null,
-      restSeconds: restSeconds && restSeconds > 0 ? restSeconds : null,
+      workSeconds: details?.workSeconds && details?.workSeconds > 0 ? details?.workSeconds : null,
+      restSeconds: null,
       exerciseRestSeconds: null,
     },
   };
 }
 
-function looksLikeSplitHeading(line, dayHeadingMode = false) {
-  const cleaned = String(line || '')
-    .replace(/^\s*#+\s*/, '')
-    .replace(/^\s*[-*•\d.)]+\s*/, '')
-    .trim();
-  if (!cleaned) {
+function applyExerciseDetails(exercise, line) {
+  if (!exercise) {
     return false;
   }
 
-  if (looksLikeDayHeading(cleaned)) {
+  const cleaned = cleanWorkoutLine(line);
+  const details = getPrescriptionDetails(cleaned);
+  if (!details) {
+    return false;
+  }
+
+  if (/^rest\b/i.test(cleaned)) {
+    exercise.timing.restSeconds = details?.restSeconds || parseSecondsFromText(cleaned);
+    exercise.raw = `${exercise?.raw || ''}\n${cleaned}`.trim();
     return true;
   }
 
-  if (dayHeadingMode) {
+  exercise.sets = Number(details?.sets || exercise?.sets || 1);
+  exercise.reps = Number(details?.reps || exercise?.reps || 1);
+  exercise.setsText = details?.setsText || exercise?.setsText || '';
+  exercise.repsText = details?.repsText || exercise?.repsText || '';
+  exercise.prescription = details?.prescription || exercise?.prescription || '';
+  exercise.timing.workSeconds = details?.workSeconds || exercise?.timing?.workSeconds || null;
+  exercise.raw = `${exercise?.raw || ''}\n${cleaned}`.trim();
+  return true;
+}
+
+function looksLikeSplitHeading(line, dayHeadingMode = false) {
+  const formatted = stripWorkoutFormatting(line);
+  const cleaned = stripListMarker(line);
+  if (!cleaned) {
     return false;
   }
-
-  return /(push|pull|leg|upper|lower|full body|core|abs|hypertrophy|conditioning|recovery|cardio)/i.test(cleaned);
+  if (looksLikeDayHeading(cleaned)) {
+    return true;
+  }
+  if (dayHeadingMode || /^\s*(?:[-*+\u2022]|\d+\s*[.)])\s+/.test(formatted)) {
+    return false;
+  }
+  return !getPrescriptionDetails(cleaned) && /(push|pull|leg|upper|lower|full body|core|abs|hypertrophy|conditioning|recovery|cardio)/i.test(cleaned);
 }
 
 function normalizeSplitName(line, fallbackIndex) {
-  const cleaned = String(line || '')
-    .replace(/^\s*#+\s*/, '')
-    .replace(/^\s*[-*•\d.)]+\s*/, '')
-    .trim();
-
+  const cleaned = stripWorkoutFormatting(line).replace(/^\s*[-*+\u2022]\s+/, '').trim();
   if (!cleaned) {
     return `Split ${fallbackIndex}`;
   }
-
   if (looksLikeDayHeading(cleaned)) {
-    return cleaned.replace(/^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*[-–—]\s*)?day\s*\d+\s*(?:[:\-–—]|[^\w\s])?\s*/i, '').trim() || `Day ${fallbackIndex}`;
+    return cleaned.replace(/^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*\d+\s*(?::|-|\u2013|\u2014)?\s*/i, '').trim() || `Day ${fallbackIndex}`;
   }
-
   return cleaned;
 }
 
 function normalizeParsedSplits(splits) {
   return splits
-    .map((split, index) => ({
-      ...split,
-      order: Number(split?.order || index + 1),
-      isRest: Boolean(split?.isRest || isRestLikeSplitName(split?.name)),
-      exercises: Array.isArray(split?.exercises) ? split?.exercises.filter(Boolean) : [],
-    }))
+    .map((split, index) => {
+      const rawText = Array.isArray(split?.rawLines) ? split?.rawLines.filter(Boolean).join('\n') : String(split?.rawText || '');
+      const { rawLines, ...normalizedSplit } = split || {};
+      return {
+        ...normalizedSplit,
+        order: Number(split?.order || index + 1),
+        isRest: Boolean(split?.isRest || isRestLikeSplitName(split?.name)),
+        exercises: Array.isArray(split?.exercises)
+          ? split?.exercises.filter((exercise) => exercise?.name && !isGenericExerciseName(exercise?.name))
+          : [],
+        notes: Array.isArray(split?.notes) ? split?.notes.filter(Boolean) : [],
+        rawText,
+      };
+    })
     .filter((split) => split?.name);
 }
 
@@ -195,7 +298,6 @@ function parseWorkoutPlanFromText(rawOutput, sessionMinutes) {
     .map((line) => line?.trim())
     .filter(Boolean);
   const dayHeadingMode = lines.some((line) => looksLikeDayHeading(line));
-
   const splits = [];
   let activeSplit = null;
   let splitIndex = 1;
@@ -203,20 +305,14 @@ function parseWorkoutPlanFromText(rawOutput, sessionMinutes) {
   let currentSection = '';
 
   lines.forEach((line) => {
-    const sectionMatch = String(line || '').match(/^\s*#{1,6}\s+(.+?)\s*$/);
-    const sectionTitle = sectionMatch?.[1]?.trim() || '';
-    if (sectionTitle && !looksLikeDayHeading(sectionTitle)) {
-      currentSection = sectionTitle.toLowerCase();
-      return;
-    }
-
-    if (looksLikeSplitHeading(line, dayHeadingMode)) {
+    if (looksLikeDayHeading(line) || (!dayHeadingMode && looksLikeSplitHeading(line, false))) {
       const splitName = normalizeSplitName(line, splitIndex);
       const dayNumber = getDayNumberFromLine(line) || splitIndex;
       const existingSplit = dayNumber ? splits.find((split) => Number(split?.dayNumber || 0) === dayNumber) : null;
-
       if (existingSplit) {
         activeSplit = existingSplit;
+        activeSplit.rawLines.push(line);
+        currentSection = '';
         return;
       }
 
@@ -227,16 +323,31 @@ function parseWorkoutPlanFromText(rawOutput, sessionMinutes) {
         order: splitIndex,
         isRest: isRestLikeSplitName(splitName),
         exercises: [],
+        notes: [],
+        rawLines: [line],
       };
       splits.push(activeSplit);
       splitIndex += 1;
+      currentSection = '';
       return;
     }
 
-    if (
-      dayHeadingMode &&
-      /^(weekly split|warmup|warm-up|progression|progression rules|recovery notes|recovery|notes?)$/i.test(currentSection)
-    ) {
+    const sectionName = getSectionName(line);
+    if (sectionName) {
+      currentSection = sectionName;
+      activeSplit?.rawLines?.push?.(line);
+      return;
+    }
+
+    activeSplit?.rawLines?.push?.(line);
+    const cleanedLine = cleanWorkoutLine(line);
+    if (/^same\s+(?:as|style\s+as)\b/i.test(cleanedLine) && activeSplit) {
+      const sectionLabel = currentSection === 'warmup' ? 'Warmup' : currentSection === 'cooldown' ? 'Cooldown' : 'Plan note';
+      activeSplit.notes.push(`${sectionLabel}: ${cleanedLine}`);
+      return;
+    }
+
+    if (!isExerciseSection(currentSection) || activeSplit?.isRest) {
       return;
     }
 
@@ -246,39 +357,59 @@ function parseWorkoutPlanFromText(rawOutput, sessionMinutes) {
       return;
     }
 
-    const exercise = parseExerciseLine(line, exerciseIndex, splitIndex - 1);
-    if (!exercise) {
+    const lastExercise = activeSplit?.exercises?.[activeSplit?.exercises?.length - 1];
+    if (/^rest\b/i.test(cleanedLine)) {
+      applyExerciseDetails(lastExercise, cleanedLine);
       return;
     }
 
-    if (!activeSplit) {
-      if (dayHeadingMode) {
-        return;
+    if (lastExercise && /^[a-z]\)\s+/i.test(stripWorkoutFormatting(line))) {
+      if (!lastExercise?.prescription) {
+        applyExerciseDetails(lastExercise, cleanedLine);
       }
-
-      const splitName = 'Main Workout';
-      activeSplit = {
-        id: `split-${splitIndex}-${slugify(splitName) || splitIndex}`,
-        name: splitName,
-        dayNumber: splitIndex,
-        order: splitIndex,
-        isRest: false,
-        exercises: [],
-      };
-      splits.push(activeSplit);
-      splitIndex += 1;
+      addExerciseGuidance(activeSplit, cleanedLine);
+      return;
     }
 
-    activeSplit.exercises.push(exercise);
-    exerciseIndex += 1;
+    const exercise = createExercise(line, exerciseIndex, splitIndex - 1);
+    if (exercise) {
+      if (!activeSplit) {
+        if (dayHeadingMode) {
+          return;
+        }
+        const splitName = 'Main Workout';
+        activeSplit = {
+          id: `split-${splitIndex}-${slugify(splitName) || splitIndex}`,
+          name: splitName,
+          dayNumber: splitIndex,
+          order: splitIndex,
+          isRest: false,
+          exercises: [],
+          notes: [],
+          rawLines: [line],
+        };
+        splits.push(activeSplit);
+        splitIndex += 1;
+      }
+      activeSplit.exercises.push(exercise);
+      exerciseIndex += 1;
+      return;
+    }
+
+    if (applyExerciseDetails(lastExercise, cleanedLine)) {
+      return;
+    }
+
+    if (lastExercise && /^[-*+\u2022]\s+/i.test(stripWorkoutFormatting(line))) {
+      addExerciseGuidance(activeSplit, cleanedLine);
+    }
   });
 
-  const parsedSplits = normalizeParsedSplits(splits);
   const fallbackDuration = Math.max(10, Number(sessionMinutes || 45));
-
   return {
-    splits: parsedSplits,
+    splits: normalizeParsedSplits(splits),
     estimatedMinutes: fallbackDuration,
+    sourceText: String(rawOutput || ''),
   };
 }
 
@@ -286,7 +417,6 @@ function buildDefaultScheduleForPlan(plan) {
   const schedule = {};
   const splits = Array.isArray(plan?.splits) ? plan?.splits : [];
   const hasExplicitDays = splits.some((entry) => Number(entry?.dayNumber || 0) > 0);
-
   WEEK_DAYS.forEach((day, index) => {
     const dayNumber = index + 1;
     const split = hasExplicitDays
@@ -299,14 +429,12 @@ function buildDefaultScheduleForPlan(plan) {
 
 function resolveScheduleSplit(plan, scheduleValue) {
   const value = String(scheduleValue || '');
-
   if (!value || value === REST_DAY_VALUE) {
     return null;
   }
 
   const rawValue = value.replace(/^id:/, '').replace(/^name:/, '');
   const lowerValue = rawValue.toLowerCase();
-
   return (
     plan?.splits?.find((entry) => entry?.id === rawValue) ||
     plan?.splits?.find((entry) => String(entry?.name || '').toLowerCase() === lowerValue) ||
@@ -325,7 +453,6 @@ function getWeekdayName(dateValue = new Date()) {
 function buildTodayScheduledWorkout({ plan, schedule, dateValue = new Date() }) {
   const dayName = getWeekdayName(dateValue);
   const splitId = schedule?.[dayName];
-
   if (!plan?.id || !splitId || splitId === REST_DAY_VALUE) {
     return null;
   }
@@ -345,6 +472,8 @@ function buildTodayScheduledWorkout({ plan, schedule, dateValue = new Date() }) 
     title: `${split?.name}`,
     isRest: Boolean(split?.isRest),
     exercises: split?.exercises || [],
+    notes: split?.notes || [],
+    fallbackText: split?.rawText || plan?.sourceText || '',
     source: 'generator_plan',
   };
 }

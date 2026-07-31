@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase.js';
 import {
   buildTodayScheduledWorkout,
   getWeekdayName,
+  parseWorkoutPlanFromText,
   readJSON as readStoredJSON,
   SAVED_WORKOUT_PLANS_KEY,
   TODAY_SCHEDULED_WORKOUT_KEY,
@@ -26,6 +27,31 @@ const WORKOUT_TEMPLATES = [
   { id: 'conditioning', name: 'Shadow Conditioning', type: 'Cardio', exercises: ['Intervals', 'Carry', 'Core'], rewardMultiplier: 1 },
   { id: 'mobility', name: 'Moonlit Mobility', type: 'Recovery', exercises: ['Hips', 'T-Spine', 'Breathing'], rewardMultiplier: 0.8 },
 ];
+
+function isGeneratedSectionLabel(value) {
+  return /^(?:warm[\s-]*up|main workout|cool[\s-]*down|rest)(?:\s*\([^)]*\))?\s*:?\s*$/i.test(String(value || '').trim());
+}
+
+function sanitizeScheduledWorkout(workout) {
+  if (!workout || typeof workout !== 'object') {
+    return workout;
+  }
+
+  const exercises = Array.isArray(workout?.exercises)
+    ? workout?.exercises.filter((exercise) => exercise?.name && !isGeneratedSectionLabel(exercise?.name))
+    : [];
+  return { ...workout, exercises };
+}
+
+function getExercisePrescription(exercise) {
+  if (exercise?.prescription) {
+    return exercise?.prescription;
+  }
+
+  const sets = exercise?.setsText || exercise?.sets || 1;
+  const reps = exercise?.repsText || exercise?.reps || 1;
+  return `${sets} x ${reps}`;
+}
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -110,31 +136,35 @@ export default function Workout() {
   const todayWorkouts = useMemo(() => history.filter((workout) => workout?.dateKey === todayKey()), [history]);
   const totalMinutes = useMemo(() => todayWorkouts.reduce((total, workout) => total + Number(workout?.durationMinutes || 0), 0), [todayWorkouts]);
   const todayScheduledWorkout = useMemo(() => {
-    const storedToday = readStoredJSON(TODAY_SCHEDULED_WORKOUT_KEY, null);
+    const storedToday = sanitizeScheduledWorkout(readStoredJSON(TODAY_SCHEDULED_WORKOUT_KEY, null));
     const today = todayKey();
-    if (storedToday?.dateKey === today && (storedToday?.title || storedToday?.splitName)) {
-      return storedToday;
-    }
-
     if (!weeklySchedule?.planId) {
-      return null;
+      return storedToday?.dateKey === today ? storedToday : null;
     }
 
     const linkedPlan = savedPlans.find((plan) => plan?.id === weeklySchedule?.planId);
     if (!linkedPlan) {
-      return null;
+      return storedToday?.dateKey === today ? storedToday : null;
     }
 
+    const reparsedPlan = linkedPlan?.sourceText
+      ? parseWorkoutPlanFromText(linkedPlan?.sourceText, linkedPlan?.estimatedMinutes)
+      : null;
+    const currentPlan = reparsedPlan?.splits?.length
+      ? { ...linkedPlan, splits: reparsedPlan?.splits }
+      : linkedPlan;
+
     const computed = buildTodayScheduledWorkout({
-      plan: linkedPlan,
+      plan: currentPlan,
       schedule: weeklySchedule?.assignments || {},
       dateValue: new Date(),
     });
 
     if (computed?.title || computed?.splitName) {
       writeStoredJSON(TODAY_SCHEDULED_WORKOUT_KEY, computed);
+      return sanitizeScheduledWorkout(computed);
     }
-    return computed;
+    return storedToday?.dateKey === today ? storedToday : null;
   }, [savedPlans, weeklySchedule]);
 
   useEffect(() => {
@@ -308,20 +338,39 @@ export default function Workout() {
             </div>
             {!todayScheduledWorkout?.isRest ? (
               <>
-                <Button onClick={startScheduledWorkout} variant="secondary">
-                  Start Workout
-                </Button>
-                <div className="space-y-2">
-                  {todayScheduledWorkout?.exercises?.map((exercise) => (
-                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3" key={exercise?.id || exercise?.name}>
-                      <p className="font-semibold text-shadow-text">{exercise?.name}</p>
-                      <p className="text-xs text-shadow-textMuted">
-                        {exercise?.sets || 3} x {exercise?.reps || 10}
-                      </p>
-                      {exercise?.guidance ? <p className="mt-2 text-xs leading-5 text-shadow-textSecondary">{exercise?.guidance}</p> : null}
+                {todayScheduledWorkout?.notes?.length ? (
+                  <div className="space-y-1 rounded-xl border border-shadow-purple/20 bg-shadow-purple/5 p-3">
+                    {todayScheduledWorkout?.notes?.map((note) => (
+                      <p className="text-xs leading-5 text-shadow-textSecondary" key={note}>{note}</p>
+                    ))}
+                  </div>
+                ) : null}
+                {todayScheduledWorkout?.exercises?.length ? (
+                  <>
+                    <Button onClick={startScheduledWorkout} variant="secondary">
+                      Start Workout
+                    </Button>
+                    <div className="space-y-2">
+                      {todayScheduledWorkout?.exercises?.map((exercise) => (
+                        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3" key={exercise?.id || exercise?.name}>
+                          <p className="font-semibold text-shadow-text">{exercise?.name}</p>
+                          <p className="mt-1 text-xs text-shadow-purpleLight">{getExercisePrescription(exercise)}</p>
+                          {exercise?.timing?.restSeconds ? (
+                            <p className="mt-1 text-xs text-shadow-textMuted">Rest: {exercise?.timing?.restSeconds} seconds</p>
+                          ) : null}
+                          {exercise?.guidance ? <p className="mt-2 text-xs leading-5 text-shadow-textSecondary">{exercise?.guidance}</p> : null}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-shadow-purpleLight">Plan details</p>
+                    <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-shadow-textSecondary">
+                      {todayScheduledWorkout?.fallbackText || 'This workout references another scheduled day. Open the saved plan for its full exercise details.'}
+                    </p>
+                  </div>
+                )}
               </>
             ) : null}
           </div>
