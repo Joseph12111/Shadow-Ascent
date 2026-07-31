@@ -66,6 +66,21 @@ export default function Login() {
   }, [navigate, postAuthDestination, user?.id]);
 
   useEffect(() => {
+    try {
+      const pageElements = [globalThis?.document?.documentElement, globalThis?.document?.body];
+      pageElements?.forEach?.((element) => {
+        element?.style?.removeProperty?.('zoom');
+        element?.style?.removeProperty?.('scale');
+        element?.style?.removeProperty?.('transform');
+      });
+      globalThis?.document?.body?.style?.removeProperty?.('overflow');
+      globalThis?.window?.scrollTo?.({ top: 0, left: 0, behavior: 'auto' });
+    } catch {
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
     if (authError) {
       setSubmitError(authError);
     }
@@ -139,8 +154,8 @@ export default function Login() {
   }
 
   return (
-    <AuthPageShell eyebrow="Return to the tower" title="Log In" subtitle="Enter the gate and continue building your rank.">
-      <form className="space-y-5" onSubmit={handleSubmit}>
+    <AuthPageShell compactMobile eyebrow="Return to the tower" title="Log In" subtitle="Enter the gate and continue building your rank.">
+      <form className="space-y-4 sm:space-y-5" onSubmit={handleSubmit}>
         {empty ? (
           <div className="rounded-2xl border border-shadow-gold/30 bg-shadow-gold/10 p-4 text-sm leading-6 text-shadow-textSecondary">
             Authentication is not configured yet. Add your Supabase URL and anon key to the environment to enable login.
@@ -242,29 +257,35 @@ export default function Login() {
   );
 }
 
-function AuthPageShell({ eyebrow, title, subtitle, children }) {
+function AuthPageShell({ eyebrow, title, subtitle, children, compactMobile = false }) {
+  const sectionClass = compactMobile
+    ? 'mt-14 max-w-[460px] self-start lg:my-auto lg:max-w-5xl lg:self-auto'
+    : 'max-w-5xl';
+  const heroPaddingClass = compactMobile ? 'p-4 sm:p-6 lg:p-8' : 'p-6 sm:p-8';
+  const formPaddingClass = compactMobile ? 'p-4 sm:p-6 lg:p-8' : 'p-6 sm:p-8';
+
   return (
-    <section className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-      <aside className="glass-card relative overflow-hidden p-6 sm:p-8">
+    <section className={`mx-auto grid w-full gap-4 sm:gap-6 lg:grid-cols-[0.9fr_1.1fr] ${sectionClass}`}>
+      <aside className={`glass-card relative overflow-hidden ${heroPaddingClass}`}>
         <div className="absolute right-6 top-6 h-24 w-24 rounded-full bg-shadow-purple/20 blur-2xl" />
         <div className="relative">
-          <AppLogo className="h-14 w-14" />
-          <p className="mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-shadow-purpleLight">{eyebrow}</p>
-          <h1 className="mt-3 font-heading text-4xl font-bold text-shadow-gold sm:text-5xl">{title}</h1>
-          <p className="mt-4 text-sm leading-6 text-shadow-textSecondary">{subtitle}</p>
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <AppLogo className={compactMobile ? 'h-11 w-11 sm:h-14 sm:w-14' : 'h-14 w-14'} />
+          <p className={`${compactMobile ? 'mt-4 text-[10px] tracking-[0.24em] sm:mt-6 sm:text-xs sm:tracking-[0.3em]' : 'mt-6 text-xs tracking-[0.3em]'} font-semibold uppercase text-shadow-purpleLight`}>{eyebrow}</p>
+          <h1 className={`${compactMobile ? 'mt-2 text-3xl sm:mt-3 sm:text-4xl lg:text-5xl' : 'mt-3 text-4xl sm:text-5xl'} font-heading font-bold text-shadow-gold`}>{title}</h1>
+          <p className={`${compactMobile ? 'mt-2' : 'mt-4'} text-sm leading-6 text-shadow-textSecondary`}>{subtitle}</p>
+          <div className={`${compactMobile ? 'mt-4 p-3 sm:mt-6 sm:p-4 lg:mt-8' : 'mt-8 p-4'} rounded-2xl border border-white/10 bg-white/[0.03]`}>
             <div className="flex items-center gap-3">
               <Sparkles className="h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
-              <p className="font-heading text-lg font-bold text-shadow-gold">Secure RPG Progression</p>
+              <p className={`${compactMobile ? 'text-base sm:text-lg' : 'text-lg'} font-heading font-bold text-shadow-gold`}>Secure RPG Progression</p>
             </div>
-            <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">Your rank profile syncs through Supabase and falls back to local cache when needed.</p>
+            <p className={`${compactMobile ? 'text-xs leading-5 sm:text-sm sm:leading-6' : 'text-sm leading-6'} mt-2 text-shadow-textSecondary`}>Your rank profile syncs through Supabase and falls back to local cache when needed.</p>
           </div>
         </div>
       </aside>
 
-      <div className="glass-card p-6 sm:p-8">
+      <div className={`glass-card ${formPaddingClass}`}>
         {children}
-        <div className="mt-6 rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4 text-sm leading-6 text-shadow-textSecondary">
+        <div className={`${compactMobile ? 'mt-4 p-3 text-xs leading-5 sm:mt-6 sm:p-4 sm:text-sm sm:leading-6' : 'mt-6 p-4 text-sm leading-6'} rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 text-shadow-textSecondary`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>Review Free, Hunter, Shadow Elite, and Monarch before checkout arrives.</span>
             <Link className="shrink-0 font-semibold text-shadow-gold transition hover:text-shadow-purpleLight" to="/subscription">
