@@ -1,4 +1,5 @@
-import { getRankById } from '../../config/rankSystem.js';
+import { useId } from 'react';
+import { DEFAULT_RANK_ICON_PATH, getRankById } from '../../config/rankSystem.js';
 
 const emblemShapes = {
   'shadow-initiate': {
@@ -44,6 +45,8 @@ const emblemShapes = {
 };
 
 export default function RankEmblem({ rankId = 'shadow-initiate', size = 96, loading = false, error = null, empty = false, className = '' }) {
+  const instanceId = useId().replace(/:/g, '');
+
   if (loading) {
     return <div className={`animate-pulse rounded-full border border-white/10 bg-white/[0.03] ${className}`} style={{ height: size, width: size }} />;
   }
@@ -57,10 +60,22 @@ export default function RankEmblem({ rankId = 'shadow-initiate', size = 96, load
   }
 
   const rank = getRankById(rankId);
-  const shape = emblemShapes?.[rank?.id] || emblemShapes?.['shadow-initiate'];
+  const shape = emblemShapes?.[rank?.iconKey || rank?.id];
   const isChallenger = rank?.id === 'challenger';
-  const gradientId = `rank-gradient-${rank?.id}`;
-  const glowId = `rank-glow-${rank?.id}`;
+  const gradientId = `rank-gradient-${rank?.id}-${instanceId}`;
+  const glowId = `rank-glow-${rank?.id}-${instanceId}`;
+
+  if (!shape?.symbol) {
+    return (
+      <img
+        alt={`${rank?.name || 'Shadow Ascent'} rank emblem`}
+        className={`rounded-full object-contain ${className}`}
+        height={size}
+        src={rank?.iconPath || DEFAULT_RANK_ICON_PATH}
+        width={size}
+      />
+    );
+  }
 
   return (
     <svg

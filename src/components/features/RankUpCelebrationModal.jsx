@@ -13,6 +13,7 @@ export default function RankUpCelebrationModal({ open = false, onClose, rankUpDa
   const source = String(rankUpData?.source || 'progress');
   const rankGift = rankUpData?.rankGift;
   const empty = !nextRankId;
+  const nextDivision = nextRank?.isMaxRank ? 'Apex' : `Division ${nextRank?.division || 'V'}`;
 
   return (
     <Modal
@@ -47,6 +48,7 @@ export default function RankUpCelebrationModal({ open = false, onClose, rankUpDa
                 <span className="font-semibold text-shadow-gold">{nextRankName}</span>.
               </p>
               <p className="text-sm text-shadow-textSecondary">Total RP: {totalRP}</p>
+              <p className="text-sm font-semibold text-shadow-purpleLight">{nextDivision}</p>
               <p className="text-xs uppercase tracking-[0.18em] text-shadow-textMuted">Source: {source}</p>
             </div>
           </div>
@@ -77,7 +79,7 @@ export default function RankUpCelebrationModal({ open = false, onClose, rankUpDa
             <p className="text-xs uppercase tracking-[0.18em] text-shadow-textMuted">Status</p>
             <p className="mt-2 flex items-center gap-2 font-semibold text-shadow-gold">
               <Crown className="h-4 w-4" aria-hidden="true" />
-              New Division Unlocked
+              {nextRank?.isMaxRank ? 'Challenger Apex' : `${nextRankName} ${nextDivision}`}
             </p>
           </div>
         </div>

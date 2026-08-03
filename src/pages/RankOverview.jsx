@@ -29,14 +29,18 @@ export default function RankOverview() {
       <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
         <RankWidget profile={profile} rankData={rankData} />
 
-        <Card title="Next Rank" subtitle={nextRank?.isMaxRank ? 'You are at the apex.' : `${nextRank?.rpNeeded} RP remaining`}>
+        <Card title="Next Division / Rank" subtitle={nextRank?.isMaxRank ? 'You are at the apex.' : `${nextRank?.rpNeeded} RP remaining`}>
           <div className="flex items-center gap-5">
-            <RankEmblem rankId={nextRank?.nextRank?.id || rankData?.rankId} size={96} />
+            <RankEmblem rankId={nextRank?.nextDivision ? rankData?.rankId : nextRank?.nextRank?.id || rankData?.rankId} size={96} />
             <div className="min-w-0 flex-1">
-              <h2 className="font-heading text-2xl font-bold text-shadow-gold">{nextRank?.nextRank?.name || 'Apex'}</h2>
-              <p className="mt-1 text-sm text-shadow-textSecondary">{nextRank?.isMaxRank ? 'No higher rank available.' : `Unlocks at ${nextRank?.nextRank?.minRP} RP.`}</p>
+              <h2 className="font-heading text-2xl font-bold text-shadow-gold">{nextRank?.nextStepLabel || 'Apex'}</h2>
+              <p className="mt-1 text-sm text-shadow-textSecondary">
+                {nextRank?.isMaxRank
+                  ? `${rankData?.totalRP} total RP. Challenger is uncapped.`
+                  : `${rankData?.divisionRP} / ${rankData?.divisionRPMax} RP in ${rankData?.statusLabel}.`}
+              </p>
               <div className="mt-5">
-                <ProgressBar label="Progress" value={nextRank?.progressToNextRank} />
+                <ProgressBar label="Division progress" value={nextRank?.progressToNextStep} />
               </div>
             </div>
           </div>
@@ -65,6 +69,11 @@ export default function RankOverview() {
                       {division?.label}: {division?.minRP}-{division?.maxRP ?? 'Apex'}
                     </span>
                   ))}
+                  {rank?.id === 'ascendant' && rank?.divisionMaxRP < rank?.maxRP ? (
+                    <span className="rounded-full border border-shadow-purple/25 bg-shadow-purple/10 px-2 py-1 text-xs text-shadow-purpleLight">
+                      Mythic Gate: {rank?.divisionMaxRP + 1}-{rank?.maxRP}
+                    </span>
+                  ) : null}
                 </div>
               </article>
             );

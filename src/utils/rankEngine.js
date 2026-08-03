@@ -1,4 +1,4 @@
-import { MAX_RANK, RANKS } from '../config/rankSystem.js';
+import { MAX_RANK, MYTHIC_MIN_RP, RANKS } from '../config/rankSystem.js';
 import { getRankGift } from './planAccess.js';
 
 const TOTAL_RP_KEY = 'shadowAscentTotalRP';
@@ -39,33 +39,56 @@ function emitEvent(eventName, detail) {
 }
 
 function getRankForRP(totalRP) {
-  const safeRP = Math.max(0, Math.floor(safeNumber(totalRP)));
   return (
     RANKS.find((rank) => {
-      const belowMax = rank?.maxRP === null || safeRP <= rank?.maxRP;
-      return safeRP >= rank?.minRP && belowMax;
+      const belowMax = rank?.maxRP === null || totalRP <= rank?.maxRP;
+      return totalRP >= rank?.minRP && belowMax;
     }) || MAX_RANK
   );
 }
 
 function getDivisionForRP(rank, totalRP) {
-  const safeRP = Math.max(0, Math.floor(safeNumber(totalRP)));
-  return (
-    rank?.divisions?.find((division) => {
-      const belowMax = division?.maxRP === null || safeRP <= division?.maxRP;
-      return safeRP >= division?.minRP && belowMax;
-    }) ||
-    rank?.divisions?.[rank?.divisions?.length - 1] ||
-    null
-  );
+  const matchedDivision = rank?.divisions?.find((division) => {
+    const belowMax = division?.maxRP === null || totalRP <= division?.maxRP;
+    return totalRP >= division?.minRP && belowMax;
+  });
+
+  return matchedDivision || rank?.divisions?.[rank?.divisions?.length - 1] || null;
+}
+
+function getNextStep(rank, division) {
+  const divisionIndex = rank?.divisions?.findIndex((entry) => entry?.id === division?.id) ?? -1;
+  const nextDivision = divisionIndex >= 0 ? rank?.divisions?.[divisionIndex + 1] || null : null;
+  const rankIndex = RANKS.findIndex((entry) => entry?.id === rank?.id);
+  const nextRank = RANKS?.[rankIndex + 1] || null;
+
+  if (nextDivision) {
+    return { nextDivision, nextRank, nextStepLabel: `${rank?.name} ${nextDivision?.label}`, nextStepMinRP: nextDivision?.minRP };
+  }
+
+  return { nextDivision: null, nextRank, nextStepLabel: nextRank?.name || 'Apex', nextStepMinRP: nextRank?.minRP ?? null };
 }
 
 export function calculateRank(totalRP) {
   const safeRP = Math.max(0, Math.floor(safeNumber(totalRP)));
   const rank = getRankForRP(safeRP);
   const division = getDivisionForRP(rank, safeRP);
+  const isMaxRank = rank?.id === MAX_RANK?.id;
+  const isAscendantGate = rank?.id === 'ascendant' && safeRP > Number(rank?.divisionMaxRP ?? rank?.maxRP);
+  const divisionRequired = division?.rpRequired;
+  const earnedInDivision = isMaxRank
+    ? Math.max(0, safeRP - rank?.minRP)
+    : isAscendantGate
+      ? Number(divisionRequired || 100)
+      : Math.max(0, safeRP - Number(division?.minRP || 0));
+  const divisionRP = divisionRequired === null ? earnedInDivision : Math.min(Number(divisionRequired || 1), earnedInDivision);
+  const divisionProgress = isMaxRank ? 100 : Math.min(100, Math.max(0, (divisionRP / Math.max(1, Number(divisionRequired || 1))) * 100));
+  const nextStep = getNextStep(rank, division);
+  const isApproachingAscendantGate = rank?.id === 'ascendant' && !isAscendantGate && !nextStep?.nextDivision;
+  const nextStepLabel = isApproachingAscendantGate ? 'Mythic Gate' : nextStep?.nextStepLabel;
+  const nextStepMinRP = isApproachingAscendantGate ? Number(rank?.divisionMaxRP || 0) + 1 : nextStep?.nextStepMinRP;
+  const rpToNextStep = isMaxRank ? 0 : Math.max(0, Number(nextStepMinRP || MYTHIC_MIN_RP) - safeRP);
   const rankSpan = rank?.maxRP === null ? 1 : Math.max(1, rank?.maxRP - rank?.minRP + 1);
-  const rankProgress = rank?.maxRP === null ? 100 : Math.min(100, Math.max(0, ((safeRP - rank?.minRP) / rankSpan) * 100));
 
   return {
     totalRP: safeRP,
@@ -75,14 +98,25 @@ export function calculateRank(totalRP) {
     tier: rank?.tier,
     color: rank?.color,
     glow: rank?.glow,
+    iconKey: rank?.iconKey,
+    iconPath: rank?.iconPath,
     division: division?.label || 'Apex',
     divisionId: division?.id || `${rank?.id}-apex`,
     divisionMinRP: division?.minRP ?? rank?.minRP,
     divisionMaxRP: division?.maxRP,
+    divisionRP,
+    divisionRPMax: divisionRequired,
+    divisionRPNeeded: isMaxRank ? 0 : rpToNextStep,
+    divisionProgress,
+    nextDivision: nextStep?.nextDivision,
+    nextRank: nextStep?.nextRank,
+    nextStepLabel,
     rankMinRP: rank?.minRP,
     rankMaxRP: rank?.maxRP,
-    rankProgress,
-    isMaxRank: rank?.id === MAX_RANK?.id,
+    rankProgress: rank?.maxRP === null ? 100 : Math.min(100, Math.max(0, ((safeRP - rank?.minRP) / rankSpan) * 100)),
+    statusLabel: isMaxRank ? 'Apex' : isAscendantGate ? 'Mythic Gate' : `Division ${division?.label}`,
+    isAscendantGate,
+    isMaxRank,
   };
 }
 
@@ -134,28 +168,29 @@ function grantRankGift(previousRank, nextRank) {
 
 export function getNextRankInfo(rankData) {
   const currentRankData = rankData || calculateRank(getTotalRP());
-  const rankIndex = RANKS.findIndex((rank) => rank?.id === currentRankData?.rankId);
-  const nextRank = RANKS?.[rankIndex + 1] || null;
 
-  if (!nextRank) {
+  if (currentRankData?.isMaxRank) {
     return {
       isMaxRank: true,
       nextRank: null,
+      nextDivision: null,
+      nextStepLabel: 'Apex',
       rpNeeded: 0,
       progressToNextRank: 100,
+      progressToNextStep: 100,
     };
   }
 
-  const totalRP = Math.max(0, Math.floor(safeNumber(currentRankData?.totalRP)));
-  const currentRank = RANKS?.[rankIndex] || RANKS[0];
-  const spanToNext = Math.max(1, nextRank?.minRP - currentRank?.minRP);
-  const earnedInRank = Math.max(0, totalRP - currentRank?.minRP);
+  const nextRank = currentRankData?.nextRank || null;
 
   return {
     isMaxRank: false,
     nextRank,
-    rpNeeded: Math.max(0, nextRank?.minRP - totalRP),
-    progressToNextRank: Math.min(100, Math.max(0, (earnedInRank / spanToNext) * 100)),
+    nextDivision: currentRankData?.nextDivision || null,
+    nextStepLabel: currentRankData?.nextStepLabel || nextRank?.name,
+    rpNeeded: Number(currentRankData?.divisionRPNeeded || 0),
+    progressToNextRank: currentRankData?.rankProgress,
+    progressToNextStep: currentRankData?.divisionProgress,
   };
 }
 
