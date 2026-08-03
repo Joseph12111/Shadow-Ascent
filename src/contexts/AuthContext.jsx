@@ -10,6 +10,7 @@ import {
   supabase,
   updateUserPassword,
 } from '../lib/supabase.js';
+import { recordProgressEvent } from '../utils/progressEvents.js';
 
 const PROFILE_STORAGE_KEY = 'userProfile';
 const SUBSCRIPTION_STORAGE_KEY = 'shadowAscentSubscription';
@@ -523,6 +524,42 @@ export function AuthProvider({ children }) {
       return undefined;
     };
   }, [syncProfile]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    function recordXPUpdate(event) {
+      recordProgressEvent({
+        userId: user?.id,
+        metric: 'xp',
+        amount: event?.detail?.amount,
+        reason: event?.detail?.source,
+        totalAfter: event?.detail?.totalXP,
+        createdAt: event?.detail?.createdAt,
+      });
+    }
+
+    function recordGoldUpdate(event) {
+      recordProgressEvent({
+        userId: user?.id,
+        metric: 'gold',
+        amount: event?.detail?.amount,
+        reason: event?.detail?.source,
+        totalAfter: event?.detail?.totalGold,
+        createdAt: event?.detail?.createdAt,
+      });
+    }
+
+    globalThis?.addEventListener?.('xpUpdated', recordXPUpdate);
+    globalThis?.addEventListener?.('goldUpdated', recordGoldUpdate);
+
+    return () => {
+      globalThis?.removeEventListener?.('xpUpdated', recordXPUpdate);
+      globalThis?.removeEventListener?.('goldUpdated', recordGoldUpdate);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id || !supabase) {

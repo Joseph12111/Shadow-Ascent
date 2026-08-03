@@ -15,6 +15,7 @@ import {
   PolarGrid,
   Radar,
   RadarChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -27,6 +28,8 @@ import HeatmapGrid from '../components/features/HeatmapGrid.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { ACHIEVEMENTS, getUnlockedAchievements } from '../utils/achievementEngine.js';
 import { getRPHistory } from '../utils/rankEngine.js';
+import { ANALYTICS_PERIODS, buildGoldSeries, buildXPSeries, getXPLevelProgress } from '../utils/progressAnalytics.js';
+import { loadProgressEvents, PROGRESS_HISTORY_UPDATED_EVENT, readProgressEvents } from '../utils/progressEvents.js';
 
 const WORKOUT_HISTORY_KEY = 'shadowAscentWorkoutHistory';
 const QUEST_HISTORY_KEY = 'shadowAscentQuestHistory';
@@ -139,7 +142,7 @@ function groupByDate(entries, dateGetter, valueGetter) {
   }, {});
 }
 
-function getStoredProgressData(profile) {
+function getStoredProgressData(profile, userId) {
   const workouts = readJSON(WORKOUT_HISTORY_KEY, []);
   const questHistory = readJSON(QUEST_HISTORY_KEY, []);
   const questState = readJSON(QUEST_STATE_KEY, {});
@@ -163,35 +166,9 @@ function getStoredProgressData(profile) {
     rpHistory,
     unlockedAchievements,
     profile: profile || {},
+    progressEvents: readProgressEvents(userId),
+    shopItemPrices: SHOP_ITEM_PRICES,
   };
-}
-
-function buildXPProgression(data) {
-  const questXP = data?.questHistory?.map((entry) => ({
-    date: toDateKey(entry?.completedAt),
-    amount: Number(entry?.reward?.xp || 0),
-  }));
-  const workoutXP = data?.workouts?.map((entry) => ({
-    date: toDateKey(entry?.completedAt),
-    amount: Number(entry?.reward?.xp || 0),
-  }));
-  const achievementXP = data?.unlockedAchievements?.map((entry) => ({
-    date: toDateKey(entry?.unlockedAt),
-    amount: Number(entry?.xpReward || 100),
-  }));
-  const grouped = groupByDate([...questXP, ...workoutXP, ...achievementXP], (entry) => entry?.date, (entry) => entry?.amount);
-  let runningXP = 0;
-
-  return Object.keys(grouped)
-    .sort()
-    .map((date) => {
-      runningXP += grouped?.[date];
-      return {
-        date,
-        xp: runningXP,
-        gained: grouped?.[date],
-      };
-    });
 }
 
 function buildRadarData(data) {
@@ -272,64 +249,6 @@ function buildHabitDiscipline(data) {
     }));
 }
 
-function buildGoldEconomy(data) {
-  const completedTaskEntries = data?.tasks
-    ?.filter((task) => task?.completed && task?.completedAt)
-    ?.map((task) => ({ date: toDateKey(task?.completedAt), earned: 2, spent: 0 }));
-  const focusEntry = data?.dashboardFocus?.dateKey ? [{ date: data?.dashboardFocus?.dateKey, earned: Number(data?.dashboardFocus?.reward?.gold || 0), spent: 0 }] : [];
-  const shopEntries = data?.inventory
-    ?.filter((item) => item && typeof item === 'object')
-    ?.map((item) => ({
-      date: item?.dateKey || toDateKey(item?.purchasedAt || item?.createdAt || item?.updatedAt),
-      earned: 0,
-      spent: Number(item?.price || SHOP_ITEM_PRICES?.[item?.id] || 0),
-    }));
-  const entries = [
-    ...data?.questHistory?.map((entry) => ({ date: toDateKey(entry?.completedAt), earned: Number(entry?.reward?.gold || 0), spent: 0 })),
-    ...data?.workouts?.map((entry) => ({ date: entry?.dateKey || toDateKey(entry?.completedAt), earned: Number(entry?.reward?.gold || 0), spent: 0 })),
-    ...completedTaskEntries,
-    ...focusEntry,
-    ...shopEntries,
-  ];
-
-  if (!entries?.length) {
-    return [];
-  }
-
-  const groupedByDate = entries.reduce((acc, entry) => {
-    const date = entry?.date;
-
-    if (!date) {
-      return acc;
-    }
-
-    return {
-      ...acc,
-      [date]: {
-        date,
-        earned: Number(acc?.[date]?.earned || 0) + Number(entry?.earned || 0),
-        spent: Number(acc?.[date]?.spent || 0) + Number(entry?.spent || 0),
-      },
-    };
-  }, {});
-
-  let runningEarned = 0;
-  let runningSpent = 0;
-
-  return Object.keys(groupedByDate)
-    .sort()
-    .map((date) => {
-      runningEarned += Number(groupedByDate?.[date]?.earned || 0);
-      runningSpent += Number(groupedByDate?.[date]?.spent || 0);
-
-      return {
-        date,
-        earned: runningEarned,
-        spent: runningSpent,
-      };
-    });
-}
-
 function buildAchievementProgress(data) {
   return ACHIEVEMENTS.map((achievement) => ({
     name: achievement?.title,
@@ -346,31 +265,65 @@ function ProgressChart({ children, empty, emptyText = 'No chart data recorded ye
   return <div className="h-72 w-full">{children}</div>;
 }
 
+function ChartPeriodSelector({ label, onChange, value }) {
+  return (
+    <div aria-label={`${label} range`} className="mb-4 grid grid-cols-4 rounded-xl border border-white/10 bg-black/20 p-1" role="group">
+      {ANALYTICS_PERIODS.map((period) => (
+        <button
+          aria-pressed={value === period?.id}
+          className={`min-h-9 rounded-lg px-2 text-xs font-semibold transition ${
+            value === period?.id ? 'bg-shadow-gold text-black' : 'text-shadow-textSecondary hover:bg-white/[0.05] hover:text-white'
+          }`}
+          key={period?.id}
+          onClick={() => onChange?.(period?.id)}
+          type="button"
+        >
+          {period?.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Progress() {
-  const { profile, loading, error } = useAuth();
-  const [progressData, setProgressData] = useState(() => getStoredProgressData(profile));
+  const { user, profile, loading, error } = useAuth();
+  const [progressData, setProgressData] = useState(() => getStoredProgressData(profile, user?.id));
+  const [xpPeriod, setXPPeriod] = useState('daily');
+  const [goldPeriod, setGoldPeriod] = useState('daily');
 
   useEffect(() => {
+    let active = true;
+
     function refreshProgressData() {
-      setProgressData(getStoredProgressData(profile));
+      setProgressData(getStoredProgressData(profile, user?.id));
     }
 
     refreshProgressData();
-    const events = ['statUpdated', 'rpUpdated', 'xpUpdated', 'goldUpdated', 'brainQuestCompleted', 'dailyQuestUpdated', 'workoutCompleted', 'achievementUnlocked', 'rankUp'];
+    if (user?.id) {
+      loadProgressEvents(user?.id).then((events) => {
+        if (active) {
+          setProgressData({ ...getStoredProgressData(profile, user?.id), progressEvents: events });
+        }
+      });
+    }
+
+    const events = ['statUpdated', 'rpUpdated', 'xpUpdated', 'goldUpdated', PROGRESS_HISTORY_UPDATED_EVENT, 'brainQuestCompleted', 'dailyQuestUpdated', 'workoutCompleted', 'achievementUnlocked', 'rankUp'];
     events.forEach((eventName) => globalThis?.addEventListener?.(eventName, refreshProgressData));
 
     return () => {
+      active = false;
       events.forEach((eventName) => globalThis?.removeEventListener?.(eventName, refreshProgressData));
     };
-  }, [profile]);
+  }, [profile, user?.id]);
 
-  const xpProgression = useMemo(() => buildXPProgression(progressData), [progressData]);
+  const xpProgression = useMemo(() => buildXPSeries(progressData, xpPeriod), [progressData, xpPeriod]);
   const radarData = useMemo(() => buildRadarData(progressData), [progressData]);
   const pieData = useMemo(() => buildPieData(progressData), [progressData]);
   const workoutFrequency = useMemo(() => buildWorkoutFrequency(progressData), [progressData]);
   const heatmapData = useMemo(() => buildHeatmapData(progressData), [progressData]);
   const habitDiscipline = useMemo(() => buildHabitDiscipline(progressData), [progressData]);
-  const goldEconomy = useMemo(() => buildGoldEconomy(progressData), [progressData]);
+  const goldEconomy = useMemo(() => buildGoldSeries(progressData, goldPeriod), [goldPeriod, progressData]);
+  const xpLevel = useMemo(() => getXPLevelProgress(progressData?.profile), [progressData?.profile]);
   const achievementProgress = useMemo(() => buildAchievementProgress(progressData), [progressData]);
   const totalWorkouts = progressData?.workouts?.length || 0;
   const totalQuests = progressData?.questHistory?.length || 0;
@@ -390,9 +343,10 @@ export default function Progress() {
 
       <section className="grid gap-5 xl:grid-cols-2">
         <Card title="XP Progression" icon={TrendingUp}>
+          <ChartPeriodSelector label="XP progression" onChange={setXPPeriod} value={xpPeriod} />
           <ProgressChart empty={!xpProgression?.length}>
             <ResponsiveContainer height="100%" width="100%">
-              <AreaChart data={xpProgression}>
+              <AreaChart data={xpProgression} margin={TIGHT_CHART_MARGIN}>
                 <defs>
                   <linearGradient id="xpGradient" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8} />
@@ -400,9 +354,10 @@ export default function Progress() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" />
-                <XAxis dataKey="date" stroke="#9ca3af" />
-                <YAxis stroke="#9ca3af" />
+                <XAxis dataKey="label" height={28} minTickGap={18} tickMargin={6} {...CHART_AXIS_PROPS} />
+                <YAxis tickMargin={4} width={42} {...CHART_AXIS_PROPS} />
                 <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
+                <ReferenceLine label={{ fill: '#f0c040', fontSize: 11, position: 'insideTopRight', value: `Level ${xpLevel?.level + 1}` }} stroke="rgba(240,192,64,0.45)" strokeDasharray="4 4" y={xpLevel?.nextLevelXP} />
                 <Area dataKey="xp" fill="url(#xpGradient)" stroke="#f0c040" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
@@ -469,11 +424,12 @@ export default function Progress() {
         </Card>
 
         <Card title="Gold Economy" icon={Coins}>
+          <ChartPeriodSelector label="Gold economy" onChange={setGoldPeriod} value={goldPeriod} />
           <ProgressChart empty={!goldEconomy?.length}>
             <ResponsiveContainer height="100%" width="100%">
               <LineChart data={goldEconomy} margin={TIGHT_CHART_MARGIN}>
                 <CartesianGrid stroke={CHART_GRID_STROKE} />
-                <XAxis dataKey="date" height={28} interval={0} minTickGap={4} tickMargin={6} {...CHART_AXIS_PROPS} />
+                <XAxis dataKey="label" height={28} minTickGap={18} tickMargin={6} {...CHART_AXIS_PROPS} />
                 <YAxis tickMargin={4} width={34} {...CHART_AXIS_PROPS} />
                 <Tooltip contentStyle={TOOLTIP_CONTENT_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} />
                 <Legend />

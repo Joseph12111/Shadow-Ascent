@@ -10,6 +10,7 @@ import BrainQuestModal from '../components/features/BrainQuestModal.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { addRP, calculateRank, getTotalRP } from '../utils/rankEngine.js';
+import { getXPLevelProgress } from '../utils/progressAnalytics.js';
 
 const DASHBOARD_FOCUS_KEY = 'shadowAscentDashboardFocus';
 const QUEST_STATE_KEY = 'shadowAscentDailyQuests';
@@ -98,6 +99,7 @@ export default function Dashboard() {
   }, [profile]);
 
   const rankData = useMemo(() => calculateRank(snapshot?.totalRP), [snapshot?.totalRP]);
+  const xpLevel = useMemo(() => getXPLevelProgress(profile, snapshot?.xp), [profile, snapshot?.xp]);
 
   function claimDailyFocus() {
     const dateKey = todayKey();
@@ -161,7 +163,25 @@ export default function Dashboard() {
         <div className="space-y-5">
           <RankWidget profile={profile} rankData={rankData} />
           <Card title="XP Flow" subtitle="Earned through quests, workouts, and discipline.">
-            <XPBar xp={snapshot?.xp} nextLevelXP={Math.max(100, Math.ceil((snapshot?.xp + 1) / 100) * 100)} />
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">Current XP</p>
+                <p className="mt-1 text-lg font-bold text-shadow-gold">{xpLevel?.totalXP}</p>
+              </div>
+              <div className="rounded-xl border border-shadow-purple/25 bg-shadow-purple/10 p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">Current Level</p>
+                <p className="mt-1 text-lg font-bold text-shadow-purpleLight">{xpLevel?.level}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">XP Needed</p>
+                <p className="mt-1 text-lg font-bold text-white">{xpLevel?.xpNeeded}</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">To Next Level</p>
+                <p className="mt-1 text-lg font-bold text-white">{xpLevel?.percentage}%</p>
+              </div>
+            </div>
+            <XPBar xp={xpLevel?.xpIntoLevel} nextLevelXP={100} />
             <div className="mt-4 rounded-2xl border border-shadow-gold/20 bg-shadow-gold/10 p-4 text-sm text-shadow-textSecondary">
               Gold held: <span className="font-semibold text-shadow-gold">{snapshot?.gold}</span>
             </div>
