@@ -248,14 +248,14 @@ export default function Profile() {
             <Field label="Title" onChange={(event) => updateField('title', event?.target?.value || '')} value={form?.title} />
             <label className="block">
               <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-shadow-textMuted">Bio</span>
-              <textarea className="mt-1.5 min-h-20 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" onChange={(event) => updateField('bio', event?.target?.value || '')} value={form?.bio} />
+              <textarea className="mt-1.5 min-h-20 w-full rounded-xl border border-shadow-border bg-black/20 px-3 py-2.5 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" onChange={(event) => updateField('bio', event?.target?.value || '')} value={form?.bio} />
             </label>
             <label className="block">
               <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-shadow-textMuted">Current Goal</span>
-              <textarea className="mt-1.5 min-h-20 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" onChange={(event) => updateField('goal', event?.target?.value || '')} value={form?.goal} />
+              <textarea className="mt-1.5 min-h-20 w-full rounded-xl border border-shadow-border bg-black/20 px-3 py-2.5 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" onChange={(event) => updateField('goal', event?.target?.value || '')} value={form?.goal} />
             </label>
             <div>
-              <Button className="w-full" type="submit">
+              <Button className="w-full transition-all duration-200 hover:shadow-purpleGlow" type="submit">
                 <Save className="h-4 w-4" aria-hidden="true" />
                 Save Profile
               </Button>
@@ -319,7 +319,9 @@ export default function Profile() {
               return (
                 <article
                   className={`rounded-2xl border p-4 ${
-                    unlockedReward ? 'border-shadow-gold/35 bg-shadow-gold/10' : 'border-white/10 bg-white/[0.03]'
+                    unlockedReward
+                      ? 'border-shadow-gold/50 bg-shadow-gold/10 shadow-goldGlowStrong'
+                      : 'border-shadow-border bg-white/[0.03] opacity-80'
                   }`}
                   key={reward?.id}
                 >
@@ -346,7 +348,7 @@ export default function Profile() {
         <Card bodyClassName="p-4 sm:p-5" empty={!Object.keys(equipped || {})?.length} emptyText="No items equipped yet. Visit the shop to equip gear." title="Equipped Items">
           <div className="grid gap-3 sm:grid-cols-2">
             {Object.entries(equipped || {})?.map(([slot, itemId]) => (
-              <div className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4" key={slot}>
+              <div className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4 transition-colors hover:border-shadow-purple/50" key={slot}>
                 <p className="text-xs uppercase tracking-[0.2em] text-shadow-textMuted">{slot}</p>
                 <p className="mt-2 font-heading text-lg font-bold text-shadow-gold">{itemId}</p>
               </div>
@@ -372,7 +374,9 @@ export default function Profile() {
 
           <div className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
             <div className="flex items-start gap-3">
-              <KeyRound className="mt-1 h-5 w-5 shrink-0 text-shadow-purpleLight" aria-hidden="true" />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-shadow-purple/20 shadow-purpleGlow">
+                <KeyRound className="h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
+              </span>
               <div className="min-w-0">
                 <p className="font-heading text-lg font-bold text-shadow-gold">Forgot password?</p>
                 <p className="mt-1 text-sm leading-6 text-shadow-textSecondary">Send a recovery link to {user?.email || 'your email'}.</p>
@@ -411,7 +415,7 @@ export default function Profile() {
             value={passwordForm?.confirmPassword}
           />
 
-          <Button className="w-full" loading={passwordBusy} size="lg" type="submit">
+          <Button className="w-full transition-all duration-200 hover:shadow-purpleGlow" loading={passwordBusy} size="lg" type="submit">
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             Save New Password
           </Button>
@@ -426,14 +430,17 @@ function AvatarAccessCard({ comingSoon = false, icon: Icon, imageUrl = '', name,
     <article className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
       <div className="flex items-center gap-3">
         {imageUrl && unlocked ? (
-          <img alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" src={imageUrl} />
+          <img alt="" className={`h-11 w-11 shrink-0 rounded-xl object-cover ${unlocked ? 'shadow-purpleGlow' : ''}`} src={imageUrl} />
         ) : (
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-shadow-purple/35 bg-black/25">
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-shadow-purple/35 bg-black/25 ${unlocked ? 'shadow-purpleGlow' : ''}`}>
             <Icon className="h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
           </span>
         )}
         <div className="min-w-0">
-          <h3 className="font-heading text-lg font-bold text-shadow-gold">{name}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-heading text-lg font-bold text-shadow-gold">{name}</h3>
+            {comingSoon ? <span className="rounded-full border border-shadow-gold/40 bg-shadow-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase text-shadow-gold">Coming Soon</span> : null}
+          </div>
           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-shadow-textMuted">
             {comingSoon ? 'Premium / Coming Soon' : unlocked ? 'Unlocked' : 'Paid Plan'}
           </p>
@@ -453,14 +460,14 @@ function Field({ label, ...props }) {
   return (
     <label className="block">
       <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-shadow-textMuted">{label}</span>
-      <input className="mt-1.5 min-h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" {...props} />
+      <input className="mt-1.5 min-h-11 w-full rounded-xl border border-shadow-border bg-black/20 px-3 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40" {...props} />
     </label>
   );
 }
 
 function InfoRow({ icon: Icon, label, value }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-shadow-border bg-white/[0.03] p-3">
       <Icon className="h-4 w-4 shrink-0 text-shadow-purpleLight" aria-hidden="true" />
       <div className="min-w-0">
         <p className="text-[10px] uppercase tracking-[0.14em] text-shadow-textMuted">{label}</p>
@@ -474,7 +481,7 @@ function PasswordField({ label, helperText = '', ...props }) {
   return (
     <label className="block">
       <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-shadow-textMuted">{label}</span>
-      <span className="mt-1.5 flex min-h-12 items-center gap-3 rounded-xl border border-white/15 bg-black/25 px-3 transition focus-within:border-shadow-gold/50 focus-within:ring-2 focus-within:ring-shadow-gold/70">
+      <span className="mt-1.5 flex min-h-12 items-center gap-3 rounded-xl border border-shadow-border bg-black/25 px-3 transition focus-within:border-shadow-gold/50 focus-within:ring-2 focus-within:ring-shadow-gold/70">
         <Lock className="h-4 w-4 shrink-0 text-shadow-purpleLight" aria-hidden="true" />
         <input className="min-w-0 flex-1 bg-transparent py-3 text-sm text-shadow-text outline-none placeholder:text-shadow-textMuted" type="password" {...props} />
       </span>

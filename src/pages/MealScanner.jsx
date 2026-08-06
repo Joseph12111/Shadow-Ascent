@@ -270,14 +270,24 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
   }
 
   return (
-    <div className="w-full space-y-6">
-      <Card empty={empty} emptyText="Connect Supabase to enable the secure AI service." error={error} loading={loading} subtitle="Secure image analysis with usage limits." title="Meal Scanner" icon={ScanLine}>
+    <div className="mx-auto w-full min-w-0 max-w-full space-y-6 overflow-x-clip pb-24 lg:pb-0">
+      <Card
+        bodyClassName="min-w-0 px-4 sm:p-5"
+        className="w-full min-w-0 max-w-full self-stretch"
+        empty={empty}
+        emptyText="Connect Supabase to enable the secure AI service."
+        error={error}
+        loading={loading}
+        subtitle="Secure image analysis with usage limits."
+        title="Meal Scanner"
+        icon={ScanLine}
+      >
         {!empty ? <UsageBanner feature="mealScanner" title="Meal Vision Scan" user={user} /> : null}
         {!empty && localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
 
         {!empty ? (
-          <form className="mt-6 grid gap-5 xl:grid-cols-[0.85fr_1.15fr]" onSubmit={scanMeal}>
-            <label className={`flex min-h-72 flex-col items-center justify-center rounded-3xl border border-dashed border-shadow-purple/40 bg-black/20 p-5 text-center transition ${preparingImage || scanning ? 'cursor-wait opacity-70' : 'cursor-pointer hover:border-shadow-gold/40'}`}>
+          <form className="mt-6 grid w-full min-w-0 gap-5 xl:grid-cols-[0.85fr_1.15fr]" onSubmit={scanMeal}>
+            <label className={`flex min-h-80 w-full min-w-0 max-w-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-dashed border-shadow-border bg-black/20 p-4 text-center transition sm:p-5 ${preparingImage || scanning ? 'cursor-wait opacity-70' : 'cursor-pointer hover:border-shadow-purpleLight hover:shadow-purpleGlow'}`}>
               {preparingImage ? (
                 <>
                   <span className="h-9 w-9 animate-spin rounded-full border-2 border-shadow-purpleLight border-t-transparent" aria-hidden="true" />
@@ -285,8 +295,10 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
                 </>
               ) : imageDataUrl ? (
                 <>
-                  <img alt="Selected meal preview" className="max-h-56 max-w-full rounded-2xl object-contain" src={imageDataUrl} />
-                  <p className="mt-3 max-w-full break-words text-sm font-semibold text-shadow-text">{imageName}</p>
+                  <img alt="Selected meal preview" className="h-64 w-full max-w-full rounded-2xl border border-shadow-border object-contain sm:h-72" src={imageDataUrl} />
+                  <p className="mt-3 block w-full min-w-0 max-w-full break-words px-1 text-sm font-semibold leading-5 text-shadow-text" title={imageName}>
+                    {imageName}
+                  </p>
                   <p className="mt-1 text-xs text-shadow-textMuted">Tap to choose another image</p>
                 </>
               ) : (
@@ -305,16 +317,16 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
               />
             </label>
 
-            <div className="space-y-4">
-              <label className="block">
+            <div className="min-w-0 space-y-4">
+              <label className="block min-w-0">
                 <span className="text-xs font-semibold uppercase tracking-[0.2em] text-shadow-textMuted">Scan Target</span>
                 <textarea
-                  className="mt-2 min-h-32 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40"
+                  className="mt-2 min-h-32 w-full min-w-0 max-w-full resize-y rounded-2xl border border-shadow-border bg-black/20 px-4 py-3 text-sm text-shadow-text outline-none transition focus:border-shadow-gold/40 focus:shadow-goldGlow"
                   onChange={(event) => setTarget(event?.target?.value || '')}
                   value={target}
                 />
               </label>
-              <label className={`inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-shadow-purple/40 bg-shadow-purple/20 px-5 py-3 text-base font-semibold text-shadow-purpleLight transition duration-200 focus-within:ring-2 focus-within:ring-shadow-gold/70 ${preparingImage || scanning ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-shadow-purple/30'}`}>
+              <label className={`inline-flex min-h-14 w-full min-w-0 items-center justify-center gap-2 whitespace-normal rounded-xl border border-shadow-purple/40 bg-shadow-purple/20 px-4 py-3 text-center text-base font-semibold text-shadow-purpleLight transition duration-200 focus-within:ring-2 focus-within:ring-shadow-gold/70 ${preparingImage || scanning ? 'cursor-not-allowed opacity-50' : 'cursor-pointer transition-shadow hover:bg-shadow-purple/30 hover:shadow-purpleGlow'}`}>
                 <Camera className="h-4 w-4" aria-hidden="true" />
                 Take Photo
                 <input
@@ -326,7 +338,7 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
                   type="file"
                 />
               </label>
-              <Button className="w-full" disabled={preparingImage} loading={scanning} size="lg" type="submit">
+              <Button className="min-h-14 w-full min-w-0 whitespace-normal px-4 text-center hover:shadow-goldGlowStrong" disabled={preparingImage} loading={scanning} size="lg" type="submit">
                 <Camera className="h-4 w-4" aria-hidden="true" />
                 Scan Meal
               </Button>
@@ -335,15 +347,25 @@ Return sections: visible foods, estimated calories, estimated macros, confidence
         ) : null}
       </Card>
 
-      <section className="grid gap-5 sm:grid-cols-3">
-        <StatBadge icon={ScanLine} label="Saved Scans" value={history?.length} />
-        <StatBadge icon={ImagePlus} label="Image" tone="purple" value={imageName || 'None'} valueClassName="break-words leading-6" />
-        <StatBadge icon={Sparkles} label="Mode" value="Vision" />
+      <section className="grid w-full min-w-0 max-w-full gap-4 sm:grid-cols-3 sm:gap-6">
+        <div className="min-w-0">
+          <StatBadge icon={ScanLine} label="Saved Scans" value={history?.length} />
+        </div>
+        <div className="min-w-0">
+          <StatBadge icon={ImagePlus} label="Image" tone="purple" value={imageName || 'None'} valueClassName="break-words leading-6" />
+        </div>
+        <div className="min-w-0">
+          <StatBadge icon={Sparkles} label="Mode" value="Vision" />
+        </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <GeneratedOutput empty={!result} text={result} title="Meal Scan Result" />
-        <HistoryPanel history={history} title="Scan History" />
+      <section className="grid w-full min-w-0 max-w-full items-start gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="w-full min-w-0 max-w-full">
+          <GeneratedOutput empty={!result} text={result} title="Meal Scan Result" />
+        </div>
+        <div className="w-full min-w-0 max-w-full">
+          <HistoryPanel history={history} title="Scan History" />
+        </div>
       </section>
 
       <UpgradeModal featureName="Meal Scanner" onClose={() => setUpgradeOpen(false)} open={!owner && upgradeOpen} />
