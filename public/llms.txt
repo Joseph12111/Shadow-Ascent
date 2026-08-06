@@ -1,0 +1,42 @@
+# Shadow Ascent
+
+> Shadow Ascent is a premium fitness RPG platform combining quests, workouts, nutrition, habit tracking, and XP-based progression.
+
+Shadow Ascent helps users build discipline through gamified fitness systems. Users can generate workouts, plan meals, scan meals, complete daily tasks, earn XP, climb ranks, and unlock rewards through consistent effort.
+
+## Core Features
+
+### Fitness RPG Progression
+- XP-based progression
+- Rank climbing
+- Level rewards
+- Daily quests
+- Discipline tracking
+
+### Workout Tools
+- AI-assisted workout generation
+- Gym, home gym, and calisthenics options
+- Workout history
+- Progress tracking
+
+### Nutrition Tools
+- AI-assisted meal planning
+- Meal scanner
+- Nutrition guidance
+- Daily food support
+
+### Motivation and Habit Building
+- Daily tasks
+- Streaks and reminders
+- Rewards and rank gifts
+- Gamified consistency
+
+## Important Pages
+- [Home](https://shadowascent.app/)
+- [Login](https://shadowascent.app/login)
+- [Sign Up](https://shadowascent.app/signup)
+- [Subscription Plans](https://shadowascent.app/subscription)
+- [Privacy Policy](https://shadowascent.app/privacy)
+
+## Brand
+Shadow Ascent is focused on fitness, discipline, RPG progression, AI-assisted planning, and long-term self-improvement.
