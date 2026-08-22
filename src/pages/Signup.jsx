@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Eye, EyeOff, KeyRound, Mail, UserRound } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, KeyRound, Mail, RefreshCw, UserRound } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
@@ -41,7 +41,7 @@ function validateSignup(form) {
 export default function Signup() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { user, loading: authLoading, error: authError, signUp, clearError } = useAuth();
+  const { user, loading: authLoading, error: authError, signUp, resendSignupEmail, clearError } = useAuth();
   const [form, setForm] = useState({ displayName: '', email: '', password: '', confirmPassword: '' });
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
@@ -49,6 +49,10 @@ export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [validatedFields, setValidatedFields] = useState({});
   const [confirmationEmail, setConfirmationEmail] = useState('');
+  const [confirmationDelayed, setConfirmationDelayed] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendStatus, setResendStatus] = useState({ type: '', message: '' });
   const empty = !isSupabaseConfigured;
 
   useEffect(() => {
@@ -62,6 +66,20 @@ export default function Signup() {
       setSubmitError(authError);
     }
   }, [authError]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) {
+      return undefined;
+    }
+
+    const timer = globalThis?.setInterval?.(() => {
+      setResendCooldown((currentCooldown) => Math.max(0, currentCooldown - 1));
+    }, 1000);
+
+    return () => {
+      globalThis?.clearInterval?.(timer);
+    };
+  }, [resendCooldown]);
 
   const hasErrors = useMemo(() => Object.keys(errors || {})?.length > 0, [errors]);
   const displayNameReady = validatedFields?.displayName === form?.displayName?.trim() && !errors?.displayName;
@@ -125,9 +143,11 @@ export default function Signup() {
     });
 
     if (result?.confirmationRequired) {
-      const nextConfirmationEmail = result?.data?.user?.email || form?.email?.trim();
+      const nextConfirmationEmail = result?.data?.user?.email || result?.pendingEmail || form?.email?.trim();
       setConfirmationEmail(nextConfirmationEmail);
-      toast?.success?.('Account created. Check your email to confirm your account.');
+      setConfirmationDelayed(Boolean(result?.confirmationDelayed));
+      setResendStatus({ type: '', message: '' });
+      toast?.success?.('Check your email to confirm your account.');
       return;
     }
 
@@ -135,20 +155,77 @@ export default function Signup() {
     navigate('/onboarding', { replace: true });
   }
 
+  async function handleResendConfirmation() {
+    if (!confirmationEmail || resendLoading || resendCooldown > 0) {
+      return;
+    }
+
+    setResendLoading(true);
+    setResendCooldown(60);
+    setResendStatus({ type: '', message: '' });
+    const result = await resendSignupEmail?.(confirmationEmail);
+    setResendLoading(false);
+
+    if (result?.error) {
+      setResendStatus({
+        type: 'error',
+        message: result?.error,
+      });
+      return;
+    }
+
+    setConfirmationDelayed(Boolean(result?.confirmationDelayed));
+    setResendStatus({
+      type: 'success',
+      message: result?.confirmationDelayed
+        ? 'Resend requested. Delivery is taking longer than expected, so check your inbox and spam folder while you wait.'
+        : 'Confirmation email sent again. Check your inbox and spam folder.',
+    });
+    toast?.success?.(result?.confirmationDelayed ? 'Confirmation resend requested.' : 'Confirmation email sent again.');
+  }
+
   if (confirmationEmail) {
     return (
-      <AuthPageShell eyebrow="Confirmation required" title="Check Your Email" subtitle="Your account was created successfully.">
+      <AuthPageShell eyebrow="Confirmation required" title="Check Your Email" subtitle={confirmationDelayed ? 'Your confirmation request is still processing.' : 'Your account was created successfully.'}>
         <div className="rounded-2xl border border-shadow-green/35 bg-shadow-green/10 p-5">
           <div className="flex items-start gap-3">
             <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-shadow-green" aria-hidden="true" />
             <div className="min-w-0">
               <h2 className="font-heading text-lg font-bold text-shadow-gold">Confirm your account</h2>
               <p className="mt-2 break-words text-sm leading-6 text-shadow-textSecondary">
-                Account created. Please check <span className="font-semibold text-shadow-text">{confirmationEmail}</span> and use the confirmation link before logging in.
+                {confirmationDelayed ? 'Your signup reached the email confirmation step.' : 'Account created.'} Please check{' '}
+                <span className="font-semibold text-shadow-text">{confirmationEmail}</span> and use the confirmation link before logging in.
               </p>
+              <ul className="mt-3 space-y-1 text-sm leading-6 text-shadow-textSecondary">
+                <li>Check your spam or junk folder.</li>
+                <li>The confirmation email can take a few minutes.</li>
+              </ul>
             </div>
           </div>
         </div>
+        {resendStatus?.message ? (
+          <div
+            className={`mt-4 rounded-xl border p-4 text-sm leading-6 ${
+              resendStatus?.type === 'success'
+                ? 'border-shadow-green/35 bg-shadow-green/10 text-shadow-textSecondary'
+                : 'border-shadow-red/35 bg-shadow-red/10 text-shadow-textSecondary'
+            }`}
+            aria-live="polite"
+          >
+            {resendStatus?.message}
+          </div>
+        ) : null}
+        <Button
+          className="mt-5 w-full"
+          disabled={resendLoading || resendCooldown > 0}
+          loading={resendLoading}
+          onClick={handleResendConfirmation}
+          type="button"
+          variant="secondary"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          {resendCooldown > 0 ? `Resend available in ${resendCooldown}s` : 'Resend Confirmation Email'}
+        </Button>
         <Link className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-shadow-purple/40 bg-shadow-purple/15 px-4 font-semibold text-shadow-purpleLight transition hover:bg-shadow-purple/25" to="/login">
           Continue to Login
         </Link>

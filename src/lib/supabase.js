@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || '';
+const productionAppUrl = 'https://www.shadowascent.app';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -36,6 +37,13 @@ function getSignupError(error) {
   const message = String(error?.message || '').toLowerCase();
   const code = String(error?.code || '').toLowerCase();
   const status = Number(error?.status || 0);
+
+  if (code === 'email_address_invalid' || /invalid email|email address.*invalid/.test(message)) {
+    return {
+      message: 'Enter a valid email address that can receive confirmation messages.',
+      fieldErrors: { email: 'This email address is not valid.' },
+    };
+  }
 
   if (/already|registered|exists|duplicate/.test(message) || code === 'user_already_exists') {
     return {
@@ -76,6 +84,25 @@ function getSignupError(error) {
     message: 'We could not create your account. Please try again shortly.',
     fieldErrors: {},
   };
+}
+
+function isConfirmationTimeout(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  const status = Number(error?.status || 0);
+
+  return code === 'request_timeout' || status === 504 || /deadline exceeded|timed? out|timeout/.test(message);
+}
+
+export function getSignupRedirectUrl() {
+  try {
+    const currentOrigin = globalThis?.location?.origin || '';
+    const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(currentOrigin);
+    const appOrigin = import.meta.env?.DEV && isLocalOrigin ? currentOrigin : productionAppUrl;
+    return `${appOrigin}/login?confirmed=1`;
+  } catch {
+    return `${productionAppUrl}/login?confirmed=1`;
+  }
 }
 
 export async function getCurrentSession() {
@@ -136,11 +163,27 @@ export async function signUpWithPassword(email, password, metadata = {}) {
       password,
       options: {
         data: metadata,
+        emailRedirectTo: getSignupRedirectUrl(),
       },
     });
 
     if (error) {
       logAuthFailure('auth.signUp', error);
+
+      if (isConfirmationTimeout(error)) {
+        return {
+          data: data || null,
+          error: null,
+          fieldErrors: {},
+          confirmationRequired: true,
+          confirmationDelayed: true,
+          pendingEmail: email,
+          failureStep: 'auth.signUp confirmation delivery',
+          errorCode: error?.code || null,
+          errorStatus: error?.status || null,
+        };
+      }
+
       const friendlyError = getSignupError(error);
 
       return {
@@ -194,6 +237,21 @@ export async function signUpWithPassword(email, password, metadata = {}) {
     };
   } catch (error) {
     logAuthFailure('auth.signUp request', error);
+
+    if (isConfirmationTimeout(error)) {
+      return {
+        data: null,
+        error: null,
+        fieldErrors: {},
+        confirmationRequired: true,
+        confirmationDelayed: true,
+        pendingEmail: email,
+        failureStep: 'auth.signUp confirmation delivery',
+        errorCode: error?.code || null,
+        errorStatus: error?.status || null,
+      };
+    }
+
     const friendlyError = getSignupError(error);
     return {
       data: null,
@@ -202,6 +260,76 @@ export async function signUpWithPassword(email, password, metadata = {}) {
       failureStep: 'auth.signUp request',
       errorCode: error?.code || null,
       errorStatus: error?.status || null,
+    };
+  }
+}
+
+export async function resendSignupConfirmation(email) {
+  if (!supabase) {
+    return { data: null, error: 'Authentication is not configured yet.' };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: getSignupRedirectUrl(),
+      },
+    });
+
+    if (error) {
+      logAuthFailure('auth.resend signup confirmation', error);
+
+      if (isConfirmationTimeout(error)) {
+        return {
+          data: data || null,
+          error: null,
+          confirmationDelayed: true,
+          errorCode: error?.code || null,
+          errorStatus: error?.status || null,
+          failureStep: 'auth.resend signup confirmation delivery',
+        };
+      }
+
+      const friendlyError = getSignupError(error);
+      return {
+        data: data || null,
+        error: friendlyError?.message || 'Unable to resend the confirmation email right now.',
+        errorCode: error?.code || null,
+        errorStatus: error?.status || null,
+        failureStep: 'auth.resend signup confirmation',
+      };
+    }
+
+    return {
+      data: data || null,
+      error: null,
+      errorCode: null,
+      errorStatus: null,
+      failureStep: null,
+    };
+  } catch (error) {
+    logAuthFailure('auth.resend signup confirmation request', error);
+
+    if (isConfirmationTimeout(error)) {
+      return {
+        data: null,
+        error: null,
+        confirmationDelayed: true,
+        errorCode: error?.code || null,
+        errorStatus: error?.status || null,
+        failureStep: 'auth.resend signup confirmation delivery',
+      };
+    }
+
+    const friendlyError = getSignupError(error);
+    return {
+      data: null,
+      error: friendlyError?.message || 'Unable to resend the confirmation email right now.',
+      errorCode: error?.code || null,
+      errorStatus: error?.status || null,
+      failureStep: 'auth.resend signup confirmation request',
     };
   }
 }

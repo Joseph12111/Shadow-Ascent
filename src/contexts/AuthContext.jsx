@@ -3,6 +3,7 @@ import {
   getCurrentSession,
   getCurrentUser,
   isSupabaseConfigured,
+  resendSignupConfirmation,
   requestPasswordReset,
   signInWithPassword,
   signOutUser,
@@ -457,6 +458,11 @@ export function AuthProvider({ children }) {
     return result;
   }, []);
 
+  const resendSignupEmail = useCallback(async (email) => {
+    setError(null);
+    return resendSignupConfirmation(email);
+  }, []);
+
   const resetPassword = useCallback(async (email) => {
     const origin = globalThis?.location?.origin || '';
     const redirectTo = `${origin}/reset-password`;
@@ -645,12 +651,13 @@ export function AuthProvider({ children }) {
       updateProfile,
       signIn,
       signUp,
+      resendSignupEmail,
       signOut,
       resetPassword,
       updatePassword,
       clearError: () => setError(null),
     }),
-    [error, loading, passwordRecovery, profile, resetPassword, signIn, signOut, signUp, subscription, updatePassword, updateProfile, user],
+    [error, loading, passwordRecovery, profile, resendSignupEmail, resetPassword, signIn, signOut, signUp, subscription, updatePassword, updateProfile, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
