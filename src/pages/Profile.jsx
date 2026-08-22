@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Award, CheckCircle2, Crown, Gem, Gift, Image as ImageIcon, KeyRound, Lock, Mail, Save, Shield, Sparkles, UserRound } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Crown, Gift, KeyRound, Lock, Mail, Save, Sparkles, UserRound } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Modal from '../components/ui/Modal.jsx';
-import StatBadge from '../components/ui/StatBadge.jsx';
-import RankWidget from '../components/game/RankWidget.jsx';
 import AchievementCard from '../components/game/AchievementCard.jsx';
+import BasicAvatar from '../components/profile/BasicAvatar.jsx';
+import AIBodyShapeAvatar from '../components/profile/AIBodyShapeAvatar.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { signInWithPassword } from '../lib/supabase.js';
@@ -16,6 +16,27 @@ import { getPlanAccess, getPlayerLevel, LEVEL_REWARDS } from '../utils/planAcces
 
 const EQUIPPED_KEY = 'shadowAscentEquippedItems';
 const PROFILE_META_KEY = 'shadowAscentProfileMeta';
+const CALCULATOR_STORAGE_KEY = 'shadowAscentCalculatorData';
+
+const BODY_GOAL_LABELS = {
+  bulk: 'Lean Gain',
+  build_muscle: 'Build Muscle',
+  cut: 'Fat Loss',
+  gain_muscle: 'Build Muscle',
+  improve_discipline: 'Improve Discipline',
+  lose_fat: 'Fat Loss',
+  maintain: 'Maintain',
+};
+
+const BODY_FOCUS_LABELS = {
+  bulk: 'Lean Muscle',
+  build_muscle: 'Lean Muscle',
+  cut: 'Fat Loss',
+  gain_muscle: 'Lean Muscle',
+  improve_discipline: 'Consistency',
+  lose_fat: 'Fat Loss',
+  maintain: 'Body Shape',
+};
 
 function readJSON(key, fallback) {
   try {
@@ -69,11 +90,29 @@ export default function Profile() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordNotice, setPasswordNotice] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [levelRewardsOpen, setLevelRewardsOpen] = useState(false);
   const equipped = readJSON(EQUIPPED_KEY, {});
   const unlocked = getUnlockedAchievements();
   const rankData = useMemo(() => calculateRank(Number(profile?.total_rp ?? getTotalRP())), [profile?.total_rp]);
   const access = useMemo(() => getPlanAccess({ user, profile, subscription }), [profile, subscription, user]);
   const playerLevel = useMemo(() => getPlayerLevel(profile), [profile]);
+  const bodyPreviewData = useMemo(() => {
+    const calculatorData = readJSON(CALCULATOR_STORAGE_KEY, {});
+    const goalId = calculatorData?.goal || profile?.goal || profile?.onboarding_goal || '';
+    const savedProgress = profile?.body_progress_percentage ?? profile?.progress_percentage;
+    const numericProgress = Number(savedProgress);
+
+    return {
+      age: calculatorData?.age || profile?.age || null,
+      bodyFocus: BODY_FOCUS_LABELS?.[goalId] || 'Body Shape',
+      gender: calculatorData?.sex || profile?.sex || profile?.gender || '',
+      goal: BODY_GOAL_LABELS?.[goalId] || form?.goal || 'Set goal',
+      height: calculatorData?.heightCm || profile?.height_cm || profile?.heightCm || null,
+      progress: Number.isFinite(numericProgress) ? Math.max(0, Math.min(100, numericProgress)) : null,
+      weight: calculatorData?.weightKg || profile?.weight_kg || profile?.weightKg || null,
+      workoutConsistency: profile?.workout_consistency || null,
+    };
+  }, [form?.goal, profile]);
   const featuredAchievements = ACHIEVEMENTS.map((achievement) => ({
     ...achievement,
     unlocked: unlocked.some((entry) => entry?.id === achievement?.id),
@@ -231,14 +270,18 @@ export default function Profile() {
 
   return (
     <div className="w-full max-w-full overflow-x-hidden space-y-5">
-      <Card bodyClassName="p-4 sm:p-5" error={error} loading={loading} subtitle="Identity, equipped items, rank, and achievements." title="Profile" icon={UserRound}>
+      <Card bodyClassName="p-4 sm:p-5" error={error} loading={loading} subtitle="Your default Shadow Ascent RPG avatar." title="Profile" icon={UserRound}>
         {localError ? <div className="mb-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
-        <div className="grid min-w-0 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-          <StatBadge icon={Crown} label="Rank" value={rankData?.rankName} />
-          <StatBadge icon={Gem} label="Gold" tone="purple" value={profile?.gold || 0} />
-          <StatBadge icon={Award} label="XP" value={profile?.xp || 0} />
-          <StatBadge icon={Shield} label="Equipped" tone="purple" value={Object.keys(equipped || {})?.length} />
-        </div>
+        <BasicAvatar
+          displayName={form?.displayName || profile?.display_name || user?.email?.split?.('@')?.[0] || 'Ascendant'}
+          gold={profile?.gold || 0}
+          items={Object.keys(equipped || {})?.length}
+          level={playerLevel}
+          rank={`${rankData?.rankName || 'Shadow Initiate'} ${rankData?.division || 'V'}`}
+          rankId={rankData?.rankId || 'shadow-initiate'}
+          title={meta?.title || form?.title}
+          xp={profile?.xp || 0}
+        />
       </Card>
 
       <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[0.9fr_1.1fr]">
@@ -264,7 +307,6 @@ export default function Profile() {
         </Card>
 
         <div className="min-w-0 max-w-full space-y-4">
-          <RankWidget profile={profile} rankData={rankData} />
           <Card bodyClassName="p-4 sm:p-5" title="Account">
             <div className="space-y-3">
               <InfoRow icon={Mail} label="Email" value={user?.email || 'Not signed in'} />
@@ -279,70 +321,88 @@ export default function Profile() {
         </div>
       </section>
 
-      <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card bodyClassName="p-4 sm:p-5" subtitle="Avatar styles unlock with your Shadow Ascent tier." title="Avatar Access" icon={ImageIcon}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AvatarAccessCard icon={UserRound} name="Basic Avatar" unlocked />
-            <AvatarAccessCard
-              imageUrl={profile?.avatar_url}
-              icon={ImageIcon}
-              name="Image Avatar"
-              onUpgrade={() => navigate('/subscription')}
-              unlocked={access?.avatar?.image}
-            />
-            <AvatarAccessCard
-              comingSoon
-              icon={Sparkles}
-              name="AI Body Shape Avatar"
-              onUpgrade={() => navigate('/subscription')}
-              unlocked={access?.avatar?.aiBodyShape}
-            />
-            <AvatarAccessCard
-              comingSoon
-              icon={Crown}
-              name="Animated Avatar"
-              onUpgrade={() => navigate('/subscription')}
-              unlocked={access?.avatar?.animated}
-            />
-          </div>
-        </Card>
-
-        <Card
-          bodyClassName="p-4 sm:p-5"
-          subtitle={`Level ${playerLevel}. These rewards are earned only through leveling and cannot be purchased.`}
-          title="Level Rewards"
-          icon={Gift}
+      <section className="glass-card min-w-0 max-w-full overflow-hidden">
+        <button
+          aria-expanded={levelRewardsOpen}
+          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-shadow-purple/10"
+          onClick={() => setLevelRewardsOpen((open) => !open)}
+          type="button"
         >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {LEVEL_REWARDS.map((reward) => {
-              const unlockedReward = playerLevel >= reward?.level;
-              return (
-                <article
-                  className={`rounded-2xl border p-4 ${
-                    unlockedReward
-                      ? 'border-shadow-gold/50 bg-shadow-gold/10 shadow-goldGlowStrong'
-                      : 'border-shadow-border bg-white/[0.03] opacity-80'
-                  }`}
-                  key={reward?.id}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-shadow-purpleLight">Level {reward?.level}</p>
-                      <h3 className="mt-2 font-heading text-lg font-bold text-shadow-gold">{reward?.name}</h3>
+          <span className="min-w-0 flex-1">
+            <span className="block font-heading text-xl font-bold text-shadow-gold">Level Rewards</span>
+            <span className="mt-1 block text-sm leading-6 text-shadow-textSecondary">
+              Level {playerLevel}. Earned only through leveling.
+            </span>
+          </span>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-shadow-purple/30 bg-shadow-purple/15 text-shadow-purpleLight shadow-purpleGlow">
+            <Gift className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <ChevronDown className={`h-5 w-5 shrink-0 text-shadow-textMuted transition-transform duration-200 ${levelRewardsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
+        <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${levelRewardsOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+          <div className="min-h-0 overflow-hidden">
+            <div className="grid gap-3 border-t border-shadow-border p-4 sm:grid-cols-2 sm:p-5">
+              {LEVEL_REWARDS.map((reward) => {
+                const unlockedReward = playerLevel >= reward?.level;
+                return (
+                  <article
+                    className={`rounded-2xl border p-4 ${
+                      unlockedReward
+                        ? 'border-shadow-gold/50 bg-shadow-gold/10 shadow-goldGlowStrong'
+                        : 'border-shadow-border bg-white/[0.03] opacity-80'
+                    }`}
+                    key={reward?.id}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-shadow-purpleLight">Level {reward?.level}</p>
+                        <h3 className="mt-2 font-heading text-lg font-bold text-shadow-gold">{reward?.name}</h3>
+                      </div>
+                      {unlockedReward ? (
+                        <CheckCircle2 className="h-5 w-5 shrink-0 text-shadow-green" aria-hidden="true" />
+                      ) : (
+                        <Lock className="h-5 w-5 shrink-0 text-shadow-textMuted" aria-hidden="true" />
+                      )}
                     </div>
-                    {unlockedReward ? (
-                      <CheckCircle2 className="h-5 w-5 shrink-0 text-shadow-green" aria-hidden="true" />
-                    ) : (
-                      <Lock className="h-5 w-5 shrink-0 text-shadow-textMuted" aria-hidden="true" />
-                    )}
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">{reward?.description}</p>
-                </article>
-              );
-            })}
+                    <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">{reward?.description}</p>
+                  </article>
+                );
+              })}
+            </div>
           </div>
-        </Card>
+        </div>
       </section>
+
+      <Card
+        bodyClassName="p-4 sm:p-5"
+        subtitle="Visual estimate based on your profile, goal, and progress."
+        title="AI Body Shape Preview"
+        icon={Sparkles}
+      >
+        <div className="relative min-w-0 overflow-hidden rounded-2xl">
+          <AIBodyShapeAvatar
+            age={bodyPreviewData?.age}
+            bodyGoal={bodyPreviewData?.bodyFocus}
+            gender={bodyPreviewData?.gender}
+            goal={bodyPreviewData?.goal}
+            height={bodyPreviewData?.height}
+            modelUrl={null}
+            progress={bodyPreviewData?.progress}
+            viewerHeight={360}
+            weight={bodyPreviewData?.weight}
+            workoutConsistency={bodyPreviewData?.workoutConsistency}
+          />
+          {!access?.avatar?.aiBodyShape ? (
+            <div className="absolute inset-x-3 bottom-20 z-10 rounded-xl border border-shadow-purple/25 bg-shadow-card/95 p-3 text-center shadow-purpleGlow backdrop-blur-sm">
+              <Lock className="mx-auto h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
+              <p className="mt-1 text-xs font-semibold text-shadow-text">AI body shape preview requires a paid plan</p>
+              <Button className="mt-2" onClick={() => navigate('/subscription')} size="sm" type="button" variant="ghost">
+                View Plans
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </Card>
 
       <section className="grid min-w-0 max-w-full gap-4 xl:grid-cols-[0.8fr_1.2fr]">
         <Card bodyClassName="p-4 sm:p-5" empty={!Object.keys(equipped || {})?.length} emptyText="No items equipped yet. Visit the shop to equip gear." title="Equipped Items">
@@ -422,37 +482,6 @@ export default function Profile() {
         </form>
       </Modal>
     </div>
-  );
-}
-
-function AvatarAccessCard({ comingSoon = false, icon: Icon, imageUrl = '', name, onUpgrade, unlocked = false }) {
-  return (
-    <article className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
-      <div className="flex items-center gap-3">
-        {imageUrl && unlocked ? (
-          <img alt="" className={`h-11 w-11 shrink-0 rounded-xl object-cover ${unlocked ? 'shadow-purpleGlow' : ''}`} src={imageUrl} />
-        ) : (
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-shadow-purple/35 bg-black/25 ${unlocked ? 'shadow-purpleGlow' : ''}`}>
-            <Icon className="h-5 w-5 text-shadow-purpleLight" aria-hidden="true" />
-          </span>
-        )}
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-heading text-lg font-bold text-shadow-gold">{name}</h3>
-            {comingSoon ? <span className="rounded-full border border-shadow-gold/40 bg-shadow-gold/10 px-2 py-0.5 text-[10px] font-bold uppercase text-shadow-gold">Coming Soon</span> : null}
-          </div>
-          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-shadow-textMuted">
-            {comingSoon ? 'Premium / Coming Soon' : unlocked ? 'Unlocked' : 'Paid Plan'}
-          </p>
-        </div>
-      </div>
-      {!unlocked ? (
-        <Button className="mt-3 w-full" onClick={onUpgrade} size="sm" type="button" variant="ghost">
-          <Lock className="h-4 w-4" aria-hidden="true" />
-          View Plans
-        </Button>
-      ) : null}
-    </article>
   );
 }
 
