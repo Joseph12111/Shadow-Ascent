@@ -94,6 +94,18 @@ function isConfirmationTimeout(error) {
   return code === 'request_timeout' || status === 504 || /deadline exceeded|timed? out|timeout/.test(message);
 }
 
+function isEmailDeliveryConfigError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  const status = Number(error?.status || 0);
+
+  return (
+    status >= 500 &&
+    (code === 'unexpected_failure' ||
+      /smtp|mail|email|confirmation|send|dial tcp|too many colons|provider/.test(message))
+  );
+}
+
 export function getSignupRedirectUrl() {
   try {
     const currentOrigin = globalThis?.location?.origin || '';
@@ -184,6 +196,17 @@ export async function signUpWithPassword(email, password, metadata = {}) {
         };
       }
 
+      if (isEmailDeliveryConfigError(error)) {
+        return {
+          data: data || null,
+          error: 'Account signup reached Supabase, but the confirmation email could not be sent. The email service needs to be fixed before signup can complete.',
+          fieldErrors: {},
+          failureStep: 'auth.signUp confirmation email delivery',
+          errorCode: error?.code || null,
+          errorStatus: error?.status || null,
+        };
+      }
+
       const friendlyError = getSignupError(error);
 
       return {
@@ -247,6 +270,17 @@ export async function signUpWithPassword(email, password, metadata = {}) {
         confirmationDelayed: true,
         pendingEmail: email,
         failureStep: 'auth.signUp confirmation delivery',
+        errorCode: error?.code || null,
+        errorStatus: error?.status || null,
+      };
+    }
+
+    if (isEmailDeliveryConfigError(error)) {
+      return {
+        data: null,
+        error: 'Account signup reached Supabase, but the confirmation email could not be sent. The email service needs to be fixed before signup can complete.',
+        fieldErrors: {},
+        failureStep: 'auth.signUp confirmation email delivery',
         errorCode: error?.code || null,
         errorStatus: error?.status || null,
       };
