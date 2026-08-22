@@ -6,7 +6,7 @@ import Card from '../components/ui/Card.jsx';
 import StatBadge from '../components/ui/StatBadge.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
-import { syncFeatureUsage } from '../utils/usageTracker.js';
+import { getUsageSnapshot, syncFeatureUsage } from '../utils/usageTracker.js';
 import { isOwner } from '../utils/ownerCheck.js';
 import { callOpenAIResponse, Field, GeneratedOutput, isAIServiceConfigured, saveAIHistory, UpgradeModal, UsageBanner } from './WorkoutGenerator.jsx';
 
@@ -145,7 +145,7 @@ function validateMealForm(form, calculatorReady) {
 }
 
 export default function MealPlanner() {
-  const { user, profile, loading, error } = useAuth();
+  const { user, profile, subscription, loading, error } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const owner = isOwner(user);
@@ -171,8 +171,14 @@ export default function MealPlanner() {
   const [generating, setGenerating] = useState(false);
   const [localError, setLocalError] = useState('');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [forgeOpen, setForgeOpen] = useState(true);
   const empty = !isAIServiceConfigured();
   const hasErrors = useMemo(() => Object.keys(formErrors || {})?.length > 0, [formErrors]);
+  const mealPlannerUsage = useMemo(
+    () => getUsageSnapshot(user, profile, subscription)?.mealPlanner,
+    [profile, subscription, user],
+  );
+  const canOpenForge = owner || Number(mealPlannerUsage?.remaining || 0) > 0;
 
   const calculatorData = useMemo(() => readCalculatorData(profile), [profile]);
   const calorieData = useMemo(
@@ -213,6 +219,20 @@ export default function MealPlanner() {
       [field]: '',
     }));
     setLocalError('');
+  }
+
+  function toggleForgePanel() {
+    if (forgeOpen) {
+      setForgeOpen(false);
+      return;
+    }
+
+    if (!canOpenForge) {
+      setUpgradeOpen(true);
+      return;
+    }
+
+    setForgeOpen(true);
   }
 
   async function generateMealPlan(event) {
@@ -282,18 +302,33 @@ Return sections: overview, meals with ingredients, protein estimate, shopping li
 
     setHistory(saved?.history);
     setResult(response?.text);
+    setForgeOpen(false);
     toast?.success?.('Meal plan generated.');
   }
 
   return (
     <div className="w-full space-y-6">
       <Card empty={empty} emptyText="Connect Supabase to enable the secure AI service." error={error} loading={loading} subtitle="Secure AI meal planning with usage limits." title="Meal Planner" icon={ChefHat}>
-        {!empty ? <UsageBanner feature="mealPlanner" title="Nutrition Forge" user={user} /> : null}
-        {!empty && localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
-        {!empty && hasErrors ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">Fix the highlighted fields to generate a plan.</div> : null}
+        {!empty ? (
+          <UsageBanner
+            feature="mealPlanner"
+            isOpen={forgeOpen}
+            onToggle={toggleForgePanel}
+            title="Nutrition Forge"
+            user={user}
+          />
+        ) : null}
 
         {!empty ? (
-          <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={generateMealPlan}>
+          <div
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+              forgeOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              {localError ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">{localError}</div> : null}
+              {hasErrors ? <div className="mt-5 rounded-2xl border border-shadow-red/30 bg-shadow-red/10 p-4 text-sm text-shadow-textSecondary">Fix the highlighted fields to generate a plan.</div> : null}
+              <form className="mt-6 grid gap-4 lg:grid-cols-2" onSubmit={generateMealPlan}>
             <div className="space-y-3 lg:col-span-2">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-shadow-textMuted">Meal Goal</p>
               <SelectionGrid error={formErrors?.mealGoal} onSelect={(value) => updateField('mealGoal', value)} options={MEAL_GOALS} selected={form?.mealGoal} columns="sm:grid-cols-2" />
@@ -411,7 +446,9 @@ Return sections: overview, meals with ingredients, protein estimate, shopping li
                 Generate Meal Plan
               </Button>
             </div>
-          </form>
+              </form>
+            </div>
+          </div>
         ) : null}
       </Card>
 

@@ -146,25 +146,25 @@ export default function Dashboard() {
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <Button disabled={focusClaimed} onClick={claimDailyFocus} variant={focusClaimed ? 'ghost' : 'primary'}>
+            <Button className="transition-all duration-200 hover:shadow-goldGlowStrong" disabled={focusClaimed} onClick={claimDailyFocus} variant={focusClaimed ? 'ghost' : 'primary'}>
               {focusClaimed ? 'Focus Claimed' : 'Claim Focus'}
             </Button>
-            <Button onClick={() => setBrainOpen(true)} variant="secondary">
+            <Button className="transition-all duration-200 hover:shadow-purpleGlow" onClick={() => setBrainOpen(true)} variant="secondary">
               <Brain className="h-4 w-4" aria-hidden="true" />
               Brain Quest
             </Button>
-            <Link className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-shadow-textSecondary transition hover:border-shadow-gold/30 hover:text-shadow-gold" to="/quests">
+            <Link className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-shadow-border bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-shadow-textSecondary transition-all duration-200 hover:border-shadow-gold/40 hover:text-shadow-gold hover:shadow-goldGlow" to="/quests">
                 <Trophy className="h-4 w-4" aria-hidden="true" />
                 Daily Quests
             </Link>
           </div>
         </Card>
 
-        <div className="space-y-5">
+        <div className="space-y-5 rounded-2xl shadow-goldGlowStrong">
           <RankWidget profile={profile} rankData={rankData} />
           <Card title="XP Flow" subtitle="Earned through quests, workouts, and discipline.">
             <div className="mb-4 grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="rounded-xl border border-shadow-border bg-white/[0.03] p-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">Current XP</p>
                 <p className="mt-1 text-lg font-bold text-shadow-gold">{xpLevel?.totalXP}</p>
               </div>
@@ -172,11 +172,11 @@ export default function Dashboard() {
                 <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">Current Level</p>
                 <p className="mt-1 text-lg font-bold text-shadow-purpleLight">{xpLevel?.level}</p>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="rounded-xl border border-shadow-border bg-white/[0.03] p-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">XP Needed</p>
                 <p className="mt-1 text-lg font-bold text-white">{xpLevel?.xpNeeded}</p>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="rounded-xl border border-shadow-border bg-white/[0.03] p-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-shadow-textMuted">To Next Level</p>
                 <p className="mt-1 text-lg font-bold text-white">{xpLevel?.percentage}%</p>
               </div>
@@ -203,7 +203,7 @@ export default function Dashboard() {
 
 function QuickLink({ icon: Icon, label, text, to }) {
   return (
-    <Link className="glass-card block p-5 transition hover:border-shadow-gold/30 hover:shadow-goldGlow" to={to}>
+    <Link className="glass-card block border-shadow-border p-5 transition-all duration-200 hover:border-shadow-purple/50 hover:shadow-purpleGlow" to={to}>
       <Icon className="h-6 w-6 text-shadow-purpleLight" aria-hidden="true" />
       <h3 className="mt-4 font-heading text-xl font-bold text-shadow-gold">{label}</h3>
       <p className="mt-2 text-sm leading-6 text-shadow-textSecondary">{text}</p>

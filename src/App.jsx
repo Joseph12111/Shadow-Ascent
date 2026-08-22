@@ -12,6 +12,7 @@ import WelcomeOpening from './components/features/WelcomeOpening.jsx';
 import NotificationScheduler from './components/features/NotificationScheduler.jsx';
 import FeedbackButton from './components/features/FeedbackButton.jsx';
 import BetaBadge from './components/ui/BetaBadge.jsx';
+import NotificationBell, { pushNotification } from './components/ui/NotificationBell.jsx';
 import { markWelcomeOpeningSeen, shouldShowWelcomeOpening } from './utils/welcomeOpening.js';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
@@ -196,6 +197,100 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    function handleStatUpdated(event) {
+      if (event?.detail?.type !== 'profile') {
+        return;
+      }
+
+      pushNotification({
+        type: 'system',
+        title: 'Profile updated',
+        message: 'Your adventurer profile has been updated.',
+      });
+    }
+
+    function handleLevelUp(event) {
+      const level = Number(event?.detail?.level || event?.detail?.currentLevel || 0);
+      pushNotification({
+        type: 'level-up',
+        title: 'Level up achieved',
+        message: level > 0 ? `You reached level ${level}.` : 'Your ascent has reached a new level.',
+      });
+    }
+
+    function handleRankNotification(event) {
+      const nextRank = event?.detail?.nextRank;
+      const rankName = nextRank?.rankName || nextRank?.name;
+      pushNotification({
+        type: 'level-up',
+        title: 'New rank unlocked',
+        message: rankName ? `You reached ${rankName}.` : 'A new rank has been unlocked.',
+      });
+    }
+
+    function handleQuestCompleted() {
+      pushNotification({
+        type: 'quest-complete',
+        title: 'Quest completed',
+        message: 'A daily quest has been completed.',
+      });
+    }
+
+    function handleAchievementUnlocked(event) {
+      const achievement = event?.detail?.achievement;
+      const achievementName = achievement?.name || achievement?.title;
+      pushNotification({
+        type: 'achievement',
+        title: 'Achievement unlocked',
+        message: achievementName ? `${achievementName} has been added to your legacy.` : 'A new achievement has been unlocked.',
+      });
+    }
+
+    function handlePlanUpdated() {
+      pushNotification({
+        type: 'plan',
+        title: 'Plan updated',
+        message: 'Your active workout schedule has been updated.',
+      });
+    }
+
+    function handleSubscriptionUpdated(event) {
+      const planName = event?.detail?.planName || event?.detail?.plan;
+      pushNotification({
+        type: 'system',
+        title: 'Subscription updated',
+        message: planName ? `Your plan is now ${planName}.` : 'Your subscription preferences have been updated.',
+      });
+    }
+
+    const eventHandlers = {
+      statUpdated: handleStatUpdated,
+      levelUp: handleLevelUp,
+      rankUp: handleRankNotification,
+      dailyQuestUpdated: handleQuestCompleted,
+      questCompleted: handleQuestCompleted,
+      achievementUnlocked: handleAchievementUnlocked,
+      workoutScheduleUpdated: handlePlanUpdated,
+      planUpdated: handlePlanUpdated,
+      subscriptionUpdated: handleSubscriptionUpdated,
+    };
+
+    Object.entries(eventHandlers).forEach(([eventName, handler]) => {
+      globalThis?.addEventListener?.(eventName, handler);
+    });
+
+    return () => {
+      Object.entries(eventHandlers).forEach(([eventName, handler]) => {
+        globalThis?.removeEventListener?.(eventName, handler);
+      });
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
     if (loading || isAuthRoute || isLandingRoute || isOnboardingRoute || !user?.id) {
       return;
     }
@@ -272,7 +367,10 @@ export default function App() {
                   <AppLogo className="h-11 w-11" />
                   <span className="font-heading text-xl font-bold text-shadow-gold">Shadow Ascent</span>
                 </Link>
-                <BetaBadge />
+                <div className="flex items-center gap-3">
+                  <BetaBadge />
+                  <NotificationBell />
+                </div>
               </header>
 
               <main className="mx-auto flex w-full max-w-6xl px-5 pb-10 pt-8 sm:px-8 sm:pt-14 lg:pt-8">

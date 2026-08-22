@@ -1,12 +1,13 @@
 import AppLogo from './AppLogo.jsx';
 import BurgerMenu from './BurgerMenu.jsx';
 import BetaBadge from '../ui/BetaBadge.jsx';
+import NotificationBell from '../ui/NotificationBell.jsx';
 
 export default function Navigation({ profile = null, loading = false, error = null, empty = false }) {
   const displayName = profile?.display_name || profile?.email || 'Ascendant';
 
   if (loading) {
-    return <header className="h-20 animate-pulse border-b border-white/10 bg-shadow-secondary/70 lg:hidden" />;
+    return <header className="h-20 animate-pulse border-b border-shadow-purple/20 bg-shadow-secondary/70 lg:hidden" />;
   }
 
   if (error) {
@@ -18,7 +19,7 @@ export default function Navigation({ profile = null, loading = false, error = nu
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-shadow-secondary/80 px-5 py-4 backdrop-blur-xl lg:hidden">
+    <header className="sticky top-0 z-30 border-b border-shadow-purple/20 bg-shadow-secondary/80 px-5 py-4 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <AppLogo className="h-11 w-11" />
@@ -30,7 +31,10 @@ export default function Navigation({ profile = null, loading = false, error = nu
             </div>
           </div>
         </div>
-        <BurgerMenu />
+        <div className="flex shrink-0 items-center gap-2">
+          <NotificationBell />
+          <BurgerMenu />
+        </div>
       </div>
     </header>
   );
