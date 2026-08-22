@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, KeyRound, Mail, UserRound } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, KeyRound, Mail, UserRound } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
@@ -48,6 +48,7 @@ export default function Signup() {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [validatedFields, setValidatedFields] = useState({});
+  const [confirmationEmail, setConfirmationEmail] = useState('');
   const empty = !isSupabaseConfigured;
 
   useEffect(() => {
@@ -118,12 +119,41 @@ export default function Signup() {
       displayName: form?.displayName?.trim(),
       email: form?.email?.trim()?.toLowerCase(),
     });
-    toast?.success?.('Your account is ready. Check your inbox if confirmation is required.');
     queueWelcomeOpening({
       id: result?.data?.user?.id || '',
       email: result?.data?.user?.email || form?.email?.trim(),
     });
+
+    if (result?.confirmationRequired) {
+      const nextConfirmationEmail = result?.data?.user?.email || form?.email?.trim();
+      setConfirmationEmail(nextConfirmationEmail);
+      toast?.success?.('Account created. Check your email to confirm your account.');
+      return;
+    }
+
+    toast?.success?.('Your account is ready.');
     navigate('/onboarding', { replace: true });
+  }
+
+  if (confirmationEmail) {
+    return (
+      <AuthPageShell eyebrow="Confirmation required" title="Check Your Email" subtitle="Your account was created successfully.">
+        <div className="rounded-2xl border border-shadow-green/35 bg-shadow-green/10 p-5">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-shadow-green" aria-hidden="true" />
+            <div className="min-w-0">
+              <h2 className="font-heading text-lg font-bold text-shadow-gold">Confirm your account</h2>
+              <p className="mt-2 break-words text-sm leading-6 text-shadow-textSecondary">
+                Account created. Please check <span className="font-semibold text-shadow-text">{confirmationEmail}</span> and use the confirmation link before logging in.
+              </p>
+            </div>
+          </div>
+        </div>
+        <Link className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-shadow-purple/40 bg-shadow-purple/15 px-4 font-semibold text-shadow-purpleLight transition hover:bg-shadow-purple/25" to="/login">
+          Continue to Login
+        </Link>
+      </AuthPageShell>
+    );
   }
 
   return (

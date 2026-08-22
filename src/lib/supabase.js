@@ -15,6 +15,69 @@ export const supabase = isSupabaseConfigured
     })
   : null;
 
+function getSupabaseErrorDetails(error) {
+  return {
+    message: String(error?.message || 'Unknown Supabase error'),
+    code: error?.code || null,
+    status: error?.status || null,
+    name: error?.name || null,
+  };
+}
+
+function logAuthFailure(step, error) {
+  if (!import.meta.env?.DEV) {
+    return;
+  }
+
+  console.error(`[Shadow Ascent auth] ${step} failed`, getSupabaseErrorDetails(error));
+}
+
+function getSignupError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  const status = Number(error?.status || 0);
+
+  if (/already|registered|exists|duplicate/.test(message) || code === 'user_already_exists') {
+    return {
+      message: 'An account already exists for this email. Try logging in or resetting your password.',
+      fieldErrors: { email: 'This email is already registered.' },
+    };
+  }
+
+  if (/weak|password/.test(message) && (/short|characters|strength|easy/.test(message) || code === 'weak_password')) {
+    return {
+      message: 'Choose a stronger password and try again.',
+      fieldErrors: { password: 'This password does not meet the account security requirements.' },
+    };
+  }
+
+  if (code === 'over_email_send_rate_limit' || /rate limit|too many/.test(message) || status === 429) {
+    return {
+      message: 'Too many signup attempts were made. Wait a few minutes, then try again.',
+      fieldErrors: {},
+    };
+  }
+
+  if (code === 'request_timeout' || status === 504 || /deadline exceeded|timed? out|timeout/.test(message)) {
+    return {
+      message: 'Account confirmation is taking longer than expected. Check your inbox first, then try again in a few minutes if no email arrives.',
+      fieldErrors: {},
+    };
+  }
+
+  if (code === 'signup_disabled' || /signups? (are )?disabled|registration.*disabled/.test(message)) {
+    return {
+      message: 'New account registration is temporarily unavailable.',
+      fieldErrors: {},
+    };
+  }
+
+  return {
+    message: 'We could not create your account. Please try again shortly.',
+    fieldErrors: {},
+  };
+}
+
 export async function getCurrentSession() {
   if (!supabase) {
     return { session: null, error: null };
@@ -22,8 +85,12 @@ export async function getCurrentSession() {
 
   try {
     const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      logAuthFailure('auth.getSession', error);
+    }
     return { session: data?.session || null, error: error ? 'Unable to load your session.' : null };
-  } catch {
+  } catch (error) {
+    logAuthFailure('auth.getSession', error);
     return { session: null, error: 'Unable to load your session.' };
   }
 }
@@ -35,8 +102,12 @@ export async function getCurrentUser() {
 
   try {
     const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      logAuthFailure('auth.getUser', error);
+    }
     return { user: data?.user || null, error: error ? 'Unable to load your account.' : null };
-  } catch {
+  } catch (error) {
+    logAuthFailure('auth.getUser', error);
     return { user: null, error: 'Unable to load your account.' };
   }
 }
@@ -69,13 +140,16 @@ export async function signUpWithPassword(email, password, metadata = {}) {
     });
 
     if (error) {
-      const message = String(error?.message || '').toLowerCase();
-      const emailAlreadyUsed = /already|registered|exists|duplicate/.test(message);
+      logAuthFailure('auth.signUp', error);
+      const friendlyError = getSignupError(error);
 
       return {
         data: data || null,
-        error: emailAlreadyUsed ? 'This email is already used.' : 'Unable to create your account.',
-        fieldErrors: emailAlreadyUsed ? { email: 'This email is already used.' } : {},
+        error: friendlyError?.message,
+        fieldErrors: friendlyError?.fieldErrors || {},
+        failureStep: 'auth.signUp',
+        errorCode: error?.code || null,
+        errorStatus: error?.status || null,
       };
     }
 
@@ -90,12 +164,45 @@ export async function signUpWithPassword(email, password, metadata = {}) {
           email: 'This email is already used.',
           displayName: metadata?.display_name ? 'Validation failed. This name may already be used.' : '',
         },
+        failureStep: 'auth.signUp',
+        errorCode: 'user_already_exists',
+        errorStatus: 400,
       };
     }
 
-    return { data: data || null, error: null, fieldErrors: {} };
-  } catch {
-    return { data: null, error: 'Unable to create your account right now.' };
+    if (!data?.user?.id) {
+      const missingUserError = new Error('Supabase signup returned no user.');
+      logAuthFailure('auth.signUp response validation', missingUserError);
+      return {
+        data: data || null,
+        error: 'We could not verify that your account was created. Please try again.',
+        fieldErrors: {},
+        failureStep: 'auth.signUp response validation',
+        errorCode: 'missing_signup_user',
+        errorStatus: null,
+      };
+    }
+
+    return {
+      data: data || null,
+      error: null,
+      fieldErrors: {},
+      confirmationRequired: !data?.session,
+      failureStep: null,
+      errorCode: null,
+      errorStatus: null,
+    };
+  } catch (error) {
+    logAuthFailure('auth.signUp request', error);
+    const friendlyError = getSignupError(error);
+    return {
+      data: null,
+      error: friendlyError?.message,
+      fieldErrors: friendlyError?.fieldErrors || {},
+      failureStep: 'auth.signUp request',
+      errorCode: error?.code || null,
+      errorStatus: error?.status || null,
+    };
   }
 }
 

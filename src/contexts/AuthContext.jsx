@@ -20,6 +20,8 @@ const AUTH_LOCAL_KEYS = [
   'shadowAscentSession',
   'shadowAscentProfile',
   'shadowAscentProfileStatus',
+  'shadowAscentOnboarding',
+  'shadowAscentWelcomeOpeningPending',
 ];
 const QUEST_HISTORY_KEY = 'shadowAscentQuestHistory';
 const WORKOUT_HISTORY_KEY = 'shadowAscentWorkoutHistory';
@@ -133,6 +135,38 @@ function queueUpsert(table, payload, onConflict) {
     query.then(() => undefined).catch(() => undefined);
   } catch {
     return;
+  }
+}
+
+function logProfileFailure(step, error) {
+  if (!import.meta.env?.DEV) {
+    return;
+  }
+
+  console.error(`[Shadow Ascent auth] ${step} failed`, {
+    message: String(error?.message || 'Unknown Supabase error'),
+    code: error?.code || null,
+    status: error?.status || null,
+  });
+}
+
+function queueProfileUpsert(profile, step = 'profile upsert') {
+  if (!profile?.id || !supabase) {
+    return;
+  }
+
+  try {
+    supabase
+      .from('profiles')
+      .upsert(profile, { onConflict: 'id' })
+      .then(({ error }) => {
+        if (error) {
+          logProfileFailure(step, error);
+        }
+      })
+      .catch((error) => logProfileFailure(step, error));
+  } catch (error) {
+    logProfileFailure(step, error);
   }
 }
 
@@ -304,19 +338,21 @@ function createDefaultProfile(authUser) {
 
 async function fetchProfile(authUser) {
   if (!authUser?.id || !supabase) {
-    return { profile: authUser?.id ? createDefaultProfile(authUser) : null, error: null };
+    return { profile: authUser?.id ? createDefaultProfile(authUser) : null, error: null, needsCreate: false };
   }
 
   try {
     const { data, error } = await supabase.from('profiles').select('*').eq('id', authUser?.id).maybeSingle();
 
     if (error) {
-      return { profile: createDefaultProfile(authUser), error: 'Unable to load your remote profile.' };
+      logProfileFailure('profile select after authentication', error);
+      return { profile: createDefaultProfile(authUser), error: 'Unable to load your remote profile.', needsCreate: false };
     }
 
-    return { profile: data || createDefaultProfile(authUser), error: null };
-  } catch {
-    return { profile: createDefaultProfile(authUser), error: 'Unable to load your remote profile.' };
+    return { profile: data || createDefaultProfile(authUser), error: null, needsCreate: !data };
+  } catch (error) {
+    logProfileFailure('profile select after authentication', error);
+    return { profile: createDefaultProfile(authUser), error: 'Unable to load your remote profile.', needsCreate: false };
   }
 }
 
@@ -350,7 +386,7 @@ export function AuthProvider({ children }) {
       return null;
     }
 
-    const [{ profile: nextProfile }, subscriptionResult] = await Promise.all([
+    const [{ profile: nextProfile, needsCreate }, subscriptionResult] = await Promise.all([
       fetchProfile(authUser),
       fetchSubscription(authUser),
     ]);
@@ -359,6 +395,9 @@ export function AuthProvider({ children }) {
     writeStoredProfile(nextProfile);
     setSubscription(nextSubscription);
     writeStoredSubscription(nextSubscription);
+    if (needsCreate) {
+      queueProfileUpsert(nextProfile, 'profile creation after authentication');
+    }
     return nextProfile;
   }, []);
 
@@ -381,15 +420,7 @@ export function AuthProvider({ children }) {
         return nextProfile;
       }
 
-      try {
-        supabase
-          .from('profiles')
-          .upsert(nextProfile, { onConflict: 'id' })
-          .then(() => undefined)
-          .catch(() => undefined);
-      } catch {
-        return nextProfile;
-      }
+      queueProfileUpsert(nextProfile, 'profile update');
 
       return nextProfile;
     },
@@ -405,10 +436,24 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signUp = useCallback(async (email, password, metadata) => {
+    setError(null);
+    clearAuthStorage();
+    setProfile(null);
+    setSubscription(null);
     const result = await signUpWithPassword(email, password, metadata);
     if (result?.error && !Object.keys(result?.fieldErrors || {})?.length) {
       setError(result?.error);
     }
+
+    const sessionUser = result?.data?.session?.user;
+    if (!result?.error && sessionUser?.id) {
+      const nextProfile = createDefaultProfile(sessionUser);
+      setUser(sessionUser);
+      setProfile(nextProfile);
+      writeStoredProfile(nextProfile);
+      queueProfileUpsert(nextProfile, 'profile creation after auth.signUp');
+    }
+
     return result;
   }, []);
 

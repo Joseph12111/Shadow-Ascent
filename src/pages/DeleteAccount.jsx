@@ -15,6 +15,8 @@ const LOCAL_KEYS_TO_CLEAR = [
   'shadowAscentSession',
   'shadowAscentProfile',
   'shadowAscentProfileStatus',
+  'shadowAscentOnboarding',
+  'shadowAscentWelcomeOpeningPending',
   'shadowAscentQuestHistory',
   'shadowAscentWorkoutHistory',
   'shadowAscentChecklistTasks',
