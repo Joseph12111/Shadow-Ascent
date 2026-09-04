@@ -4,6 +4,10 @@ import Button from '../ui/Button.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useToast } from '../../hooks/useToast.js';
 import {
+  millisecondsUntilNextLocalDay,
+  resetDailyChecklistIfNeeded,
+} from '../../utils/checklistDailyReset.js';
+import {
   createChecklistNotificationPayload,
   findDueTaskReminder,
   getNotificationPermission,
@@ -36,6 +40,44 @@ export default function NotificationScheduler() {
     () => Boolean(user?.id && !settings?.permissionAsked && !settings?.permissionSkipped && permission === 'default'),
     [permission, settings?.permissionAsked, settings?.permissionSkipped, user?.id],
   );
+
+  useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    let midnightTimer;
+
+    function runDailyReset() {
+      resetDailyChecklistIfNeeded();
+    }
+
+    function scheduleMidnightReset() {
+      globalThis?.clearTimeout?.(midnightTimer);
+      midnightTimer = globalThis?.setTimeout?.(() => {
+        runDailyReset();
+        scheduleMidnightReset();
+      }, millisecondsUntilNextLocalDay());
+    }
+
+    function handleVisibility() {
+      if (globalThis?.document?.visibilityState === 'visible') {
+        runDailyReset();
+        scheduleMidnightReset();
+      }
+    }
+
+    runDailyReset();
+    scheduleMidnightReset();
+    globalThis?.document?.addEventListener?.('visibilitychange', handleVisibility);
+    globalThis?.addEventListener?.('focus', handleVisibility);
+
+    return () => {
+      globalThis?.clearTimeout?.(midnightTimer);
+      globalThis?.document?.removeEventListener?.('visibilitychange', handleVisibility);
+      globalThis?.removeEventListener?.('focus', handleVisibility);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const timer = globalThis?.setTimeout?.(() => {

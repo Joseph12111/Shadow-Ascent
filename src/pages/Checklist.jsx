@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Ban, Bell, CheckCircle2, Clock, Flame, ListChecks, Plus, Trash2, Volume2 } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -7,6 +7,11 @@ import StatBadge from '../components/ui/StatBadge.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { useToast } from '../hooks/useToast.js';
 import { checkAchievements } from '../utils/achievementEngine.js';
+import {
+  CHECKLIST_DAILY_RESET_EVENT,
+  CHECKLIST_TASKS_KEY,
+  resetDailyChecklistIfNeeded,
+} from '../utils/checklistDailyReset.js';
 import {
   getDefaultTaskReminder,
   getLocalDateKey,
@@ -17,7 +22,7 @@ import {
 } from '../utils/notificationSystem.js';
 import { supabase } from '../lib/supabase.js';
 
-const TASKS_KEY = 'shadowAscentChecklistTasks';
+const TASKS_KEY = CHECKLIST_TASKS_KEY;
 const HABITS_KEY = 'shadowAscentBadHabits';
 const MILESTONES = [3, 7, 14, 30];
 
@@ -125,8 +130,8 @@ export default function Checklist() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState('tasks');
   const [tasks, setTasks] = useState(() => {
-    const storedTasks = readJSON(TASKS_KEY, []);
-    return Array.isArray(storedTasks) ? storedTasks : [];
+    const result = resetDailyChecklistIfNeeded();
+    return Array.isArray(result?.tasks) ? result.tasks : [];
   });
   const [habits, setHabits] = useState(() => {
     const storedHabits = readJSON(HABITS_KEY, defaultHabits());
@@ -142,6 +147,28 @@ export default function Checklist() {
   const completedTasks = useMemo(() => tasks.filter((task) => task?.completed)?.length, [tasks]);
   const bestHabitStreak = useMemo(() => habits.reduce((best, habit) => Math.max(best, Number(habit?.streak || 0)), 0), [habits]);
   const editingTask = useMemo(() => tasks.find((task) => task?.id === editingReminderId), [editingReminderId, tasks]);
+
+  useEffect(() => {
+    function refreshTasks(event) {
+      const eventTasks = event?.detail?.tasks;
+      const storedTasks = Array.isArray(eventTasks) ? eventTasks : readJSON(TASKS_KEY, []);
+      setTasks(Array.isArray(storedTasks) ? storedTasks : []);
+    }
+
+    function handleStorage(event) {
+      if (event?.key === TASKS_KEY) {
+        refreshTasks();
+      }
+    }
+
+    globalThis?.addEventListener?.(CHECKLIST_DAILY_RESET_EVENT, refreshTasks);
+    globalThis?.addEventListener?.('storage', handleStorage);
+
+    return () => {
+      globalThis?.removeEventListener?.(CHECKLIST_DAILY_RESET_EVENT, refreshTasks);
+      globalThis?.removeEventListener?.('storage', handleStorage);
+    };
+  }, []);
 
   function saveTasks(nextTasks) {
     const saved = writeJSON(TASKS_KEY, nextTasks);
