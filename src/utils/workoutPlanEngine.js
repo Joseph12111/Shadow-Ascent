@@ -50,13 +50,13 @@ function stripListMarker(line) {
 
 function getDayNumberFromLine(line) {
   const cleaned = stripWorkoutFormatting(line).replace(/^\s*[-*+\u2022]\s+/, '').trim();
-  const match = cleaned.match(/^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*(\d+)/i);
+  const match = cleaned.match(/^(?:(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*(\d+)/i);
   return match?.[1] ? Number(match?.[1]) : null;
 }
 
 function looksLikeDayHeading(line) {
   const cleaned = stripWorkoutFormatting(line).replace(/^\s*[-*+\u2022]\s+/, '').trim();
-  return /^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*\d+\b/i.test(cleaned);
+  return /^(?:(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*\d+\b/i.test(cleaned);
 }
 
 function parseSecondsFromText(text) {
@@ -104,6 +104,7 @@ function normalizeRange(value) {
 function getPrescriptionDetails(line) {
   const cleaned = cleanWorkoutLine(line);
   const patterns = [
+    /sets?\s*:?\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*(?:[,|/]\s*)?reps?\s*:?\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)/i,
     /(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*sets?\s*[x\u00d7]\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)(?:\s*reps?)?/i,
     /(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*[x\u00d7]\s*(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)(?:\s*reps?)?/i,
     /(?:[x\u00d7]\s*)?(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)\s*sets?\s*(?:(?:of|:)\s*)?(\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?)(?:\s*reps?)?/i,
@@ -134,8 +135,8 @@ function getPrescriptionDetails(line) {
 }
 
 function getSectionName(line) {
-  const cleaned = stripWorkoutFormatting(line);
-  const match = cleaned.match(/^(warm[\s-]*up|main workout|cool[\s-]*down|weekly split|progression(?: rules)?|recovery notes?|notes?|overview)(?:\s*\([^)]*\))?\s*:?\s*$/i);
+  const cleaned = stripListMarker(line);
+  const match = cleaned.match(/^(warm[\s-]*up|activation|main workout|main lifts?|strength block|core(?: block)?|accessor(?:y|ies)(?: block)?|finisher|conditioning(?: block)?|cool[\s-]*down|weekly split|progression(?: rules)?|recovery notes?|notes?|overview)(?:\s*\([^)]*\))?\s*:?\s*$/i);
   if (!match?.[1]) {
     return '';
   }
@@ -151,11 +152,34 @@ function getSectionName(line) {
 }
 
 function isExerciseSection(section) {
-  return !/^(weekly split|warmup|cooldown|progression|progression rules|recovery notes?|notes?|overview)$/i.test(String(section || ''));
+  return !/^(weekly split|progression|progression rules|recovery notes?|notes?|overview)$/i.test(String(section || ''));
 }
 
 function isGenericExerciseName(value) {
-  return /^(?:warm[\s-]*up|main workout|cool[\s-]*down|rest)(?:\s*\([^)]*\))?\s*:?\s*$/i.test(String(value || '').trim());
+  return /^(?:warm[\s-]*up|activation|main workout|main lifts?|strength block|core(?: block)?|accessor(?:y|ies)(?: block)?|finisher|conditioning(?: block)?|cool[\s-]*down|rest)(?:\s*\([^)]*\))?\s*:?\s*$/i.test(String(value || '').trim());
+}
+
+function isExerciseDetailLine(value) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) {
+    return true;
+  }
+
+  return (
+    /^(?:rest|sets?|reps?|rounds?|duration|time|tempo|coaching|cue|note|form|equipment|same\s+(?:as|style\s+as))\b/i.test(cleaned) ||
+    /^(?:keep|use|try|pause|maintain|avoid|brace|squeeze|drive|focus|perform|alternate|slow|control|breathe|hold for)\b/i.test(cleaned) ||
+    /^\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:sets?\b|rounds?\b|[x\u00d7]|seconds?\b|secs?\b|minutes?\b|mins?\b)/i.test(cleaned)
+  );
+}
+
+function looksLikeStandaloneExerciseName(value) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned || isExerciseDetailLine(cleaned) || isGenericExerciseName(cleaned)) {
+    return false;
+  }
+
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  return words.length <= 16 && !/[.!?]$/.test(cleaned);
 }
 
 function getExerciseLead(line) {
@@ -165,20 +189,19 @@ function getExerciseLead(line) {
     return numbered?.[1].trim();
   }
 
+  const lettered = formatted.match(/^\s*[A-Z]\s*[.)]\s+(.+)$/);
+  if (lettered?.[1]) {
+    return lettered?.[1].trim();
+  }
+
   const bullet = formatted.match(/^\s*[-*+\u2022]\s+(.+)$/);
   if (bullet?.[1]) {
     const bulletText = bullet?.[1].trim();
-    if (
-      /^(?:rest|sets?|reps?|tempo|hold|use|keep|try|pause|same as|same style)/i.test(bulletText) ||
-      /^\d+(?:\s*(?:-|\u2013|\u2014)\s*\d+)?\s*(?:sets?\b|[x\u00d7])/i.test(bulletText)
-    ) {
-      return '';
-    }
-    return getPrescriptionDetails(bulletText) ? bulletText : '';
+    return looksLikeStandaloneExerciseName(bulletText) ? bulletText : '';
   }
 
-  if (/^[a-z]/i.test(formatted) && !/^(?:rest|sets?|reps?|tempo|hold|use|keep|try|pause|same as|same style)/i.test(formatted)) {
-    return getPrescriptionDetails(formatted) ? formatted : '';
+  if (/^[a-z0-9]/i.test(formatted) && looksLikeStandaloneExerciseName(formatted)) {
+    return formatted;
   }
   return '';
 }
@@ -194,7 +217,7 @@ function getExerciseName(lead) {
   return withoutPrescription || cleanWorkoutLine(lead);
 }
 
-function createExercise(line, index, splitOrder = 0) {
+function createExercise(line, index, splitOrder = 0, section = '') {
   const lead = getExerciseLead(line);
   const name = getExerciseName(lead);
   if (!lead || !name || isGenericExerciseName(name)) {
@@ -212,6 +235,7 @@ function createExercise(line, index, splitOrder = 0) {
     prescription: details?.prescription || '',
     raw: cleanWorkoutLine(line),
     guidance: '',
+    section: section || 'workout',
     timing: {
       workSeconds: details?.workSeconds && details?.workSeconds > 0 ? details?.workSeconds : null,
       restSeconds: null,
@@ -253,6 +277,9 @@ function looksLikeSplitHeading(line, dayHeadingMode = false) {
   if (!cleaned) {
     return false;
   }
+  if (getSectionName(line)) {
+    return false;
+  }
   if (looksLikeDayHeading(cleaned)) {
     return true;
   }
@@ -268,7 +295,7 @@ function normalizeSplitName(line, fallbackIndex) {
     return `Split ${fallbackIndex}`;
   }
   if (looksLikeDayHeading(cleaned)) {
-    return cleaned.replace(/^(?:(?:mon|tue|wed|thu|fri|sat|sun)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*\d+\s*(?::|-|\u2013|\u2014)?\s*/i, '').trim() || `Day ${fallbackIndex}`;
+    return cleaned.replace(/^(?:(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s*(?:-|:|\u2013|\u2014)\s*)?day\s*\d+\s*(?::|-|\u2013|\u2014)?\s*/i, '').trim() || `Day ${fallbackIndex}`;
   }
   return cleaned;
 }
@@ -371,7 +398,11 @@ function parseWorkoutPlanFromText(rawOutput, sessionMinutes) {
       return;
     }
 
-    const exercise = createExercise(line, exerciseIndex, splitIndex - 1);
+    if (lastExercise && isExerciseDetailLine(cleanedLine) && applyExerciseDetails(lastExercise, cleanedLine)) {
+      return;
+    }
+
+    const exercise = createExercise(line, exerciseIndex, splitIndex - 1, currentSection);
     if (exercise) {
       if (!activeSplit) {
         if (dayHeadingMode) {

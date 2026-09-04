@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Dumbbell, Flame, History, Plus, Timer } from 'lucide-react';
+import { ChevronDown, Dumbbell, Flame, History, Plus, Timer } from 'lucide-react';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import StatBadge from '../components/ui/StatBadge.jsx';
@@ -37,9 +37,21 @@ function sanitizeScheduledWorkout(workout) {
     return workout;
   }
 
-  const exercises = Array.isArray(workout?.exercises)
+  let exercises = Array.isArray(workout?.exercises)
     ? workout?.exercises.filter((exercise) => exercise?.name && !isGeneratedSectionLabel(exercise?.name))
     : [];
+
+  if (!exercises?.length && workout?.fallbackText) {
+    const recoveredPlan = parseWorkoutPlanFromText(workout?.fallbackText);
+    const targetName = String(workout?.splitName || workout?.title || '').trim().toLowerCase();
+    const recoveredSplit =
+      recoveredPlan?.splits?.find((split) => String(split?.name || '').trim().toLowerCase() === targetName) ||
+      recoveredPlan?.splits?.[0];
+    exercises = Array.isArray(recoveredSplit?.exercises)
+      ? recoveredSplit?.exercises.filter((exercise) => exercise?.name && !isGeneratedSectionLabel(exercise?.name))
+      : [];
+  }
+
   return { ...workout, exercises };
 }
 
@@ -48,9 +60,36 @@ function getExercisePrescription(exercise) {
     return exercise?.prescription;
   }
 
-  const sets = exercise?.setsText || exercise?.sets || 1;
-  const reps = exercise?.repsText || exercise?.reps || 1;
-  return `${sets} x ${reps}`;
+  if (exercise?.setsText || exercise?.repsText) {
+    const sets = exercise?.setsText || exercise?.sets || 1;
+    const reps = exercise?.repsText || exercise?.reps || 1;
+    return `${sets} x ${reps}`;
+  }
+
+  if (exercise?.timing?.workSeconds) {
+    return `${exercise?.timing?.workSeconds} seconds`;
+  }
+
+  return 'Prescription in full plan';
+}
+
+function getExerciseSectionLabel(section) {
+  const labels = {
+    activation: 'Activation',
+    accessories: 'Accessories',
+    'accessory block': 'Accessory Block',
+    conditioning: 'Conditioning',
+    'conditioning block': 'Conditioning',
+    core: 'Core',
+    'core block': 'Core',
+    cooldown: 'Cool-down',
+    finisher: 'Finisher',
+    'main lifts': 'Main Lifts',
+    'main workout': 'Main Workout',
+    'strength block': 'Strength Block',
+    warmup: 'Warm-up',
+  };
+  return labels?.[section] || '';
 }
 
 function todayKey() {
@@ -123,6 +162,7 @@ export default function Workout() {
   const [form, setForm] = useState({ title: WORKOUT_TEMPLATES?.[0]?.name, durationMinutes: '30', notes: '' });
   const [formError, setFormError] = useState('');
   const [timerOpen, setTimerOpen] = useState(false);
+  const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
   const [savedPlans, setSavedPlans] = useState(() => {
     const storedPlans = readStoredJSON(SAVED_WORKOUT_PLANS_KEY, []);
     return Array.isArray(storedPlans) ? storedPlans : [];
@@ -180,6 +220,10 @@ export default function Workout() {
       globalThis?.removeEventListener?.('workoutScheduleUpdated', refreshSchedule);
     };
   }, []);
+
+  useEffect(() => {
+    setPlanDetailsOpen(false);
+  }, [todayScheduledWorkout?.id]);
 
   function chooseTemplate(template) {
     setSelectedTemplateId(template?.id);
@@ -330,11 +374,25 @@ export default function Workout() {
       >
         {todayScheduledWorkout?.title || todayScheduledWorkout?.splitName ? (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4">
-              <p className="font-heading text-lg font-bold text-shadow-gold">{todayScheduledWorkout?.splitName || todayScheduledWorkout?.title}</p>
-              <p className="mt-1 text-sm text-shadow-textSecondary">
-                {todayScheduledWorkout?.isRest ? 'Rest or mobility day assigned from your weekly schedule.' : `${todayScheduledWorkout?.exercises?.length || 0} exercises loaded for today.`}
-              </p>
+            <div className="flex min-w-0 flex-col gap-4 rounded-2xl border border-shadow-purple/30 bg-shadow-purple/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="break-words font-heading text-lg font-bold text-shadow-gold">
+                  {todayScheduledWorkout?.splitName || todayScheduledWorkout?.title}
+                </p>
+                <p className="mt-1 text-sm text-shadow-textSecondary">
+                  {todayScheduledWorkout?.isRest
+                    ? 'Rest or mobility day assigned from your weekly schedule.'
+                    : todayScheduledWorkout?.exercises?.length
+                      ? `${todayScheduledWorkout?.exercises?.length} exercise${todayScheduledWorkout?.exercises?.length === 1 ? '' : 's'} loaded for today.`
+                      : 'Workout plan found, but exercises could not be parsed.'}
+                </p>
+              </div>
+              {!todayScheduledWorkout?.isRest && todayScheduledWorkout?.exercises?.length ? (
+                <Button className="w-full shrink-0 shadow-goldGlowStrong sm:w-auto" onClick={startScheduledWorkout}>
+                  <Timer className="h-4 w-4" aria-hidden="true" />
+                  Start Workout
+                </Button>
+              ) : null}
             </div>
             {!todayScheduledWorkout?.isRest ? (
               <>
@@ -346,32 +404,60 @@ export default function Workout() {
                   </div>
                 ) : null}
                 {todayScheduledWorkout?.exercises?.length ? (
-                  <>
-                    <Button onClick={startScheduledWorkout} variant="secondary">
-                      Start Workout
-                    </Button>
-                    <div className="space-y-2">
-                      {todayScheduledWorkout?.exercises?.map((exercise) => (
-                        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3" key={exercise?.id || exercise?.name}>
-                          <p className="font-semibold text-shadow-text">{exercise?.name}</p>
-                          <p className="mt-1 text-xs text-shadow-purpleLight">{getExercisePrescription(exercise)}</p>
-                          {exercise?.timing?.restSeconds ? (
-                            <p className="mt-1 text-xs text-shadow-textMuted">Rest: {exercise?.timing?.restSeconds} seconds</p>
+                  <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                    {todayScheduledWorkout?.exercises?.map((exercise) => {
+                      const sectionLabel = getExerciseSectionLabel(exercise?.section);
+                      return (
+                        <article className="min-w-0 rounded-xl border border-shadow-border bg-black/20 p-4" key={exercise?.id || exercise?.name}>
+                          {sectionLabel ? (
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-shadow-purpleLight">{sectionLabel}</p>
                           ) : null}
-                          {exercise?.guidance ? <p className="mt-2 text-xs leading-5 text-shadow-textSecondary">{exercise?.guidance}</p> : null}
-                        </div>
-                      ))}
-                    </div>
-                  </>
+                          <h3 className="mt-1 break-words font-semibold text-shadow-text">{exercise?.name}</h3>
+                          <dl className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
+                            <div className="min-w-0 rounded-lg border border-shadow-border bg-shadow-card/60 p-2.5">
+                              <dt className="uppercase tracking-[0.12em] text-shadow-textMuted">Sets / reps or time</dt>
+                              <dd className="mt-1 break-words font-semibold text-shadow-gold">{getExercisePrescription(exercise)}</dd>
+                            </div>
+                            <div className="min-w-0 rounded-lg border border-shadow-border bg-shadow-card/60 p-2.5">
+                              <dt className="uppercase tracking-[0.12em] text-shadow-textMuted">Rest</dt>
+                              <dd className="mt-1 font-semibold text-shadow-textSecondary">
+                                {exercise?.timing?.restSeconds ? `${exercise?.timing?.restSeconds} seconds` : 'Use session default'}
+                              </dd>
+                            </div>
+                          </dl>
+                          {exercise?.guidance ? (
+                            <p className="mt-3 break-words text-xs leading-5 text-shadow-textSecondary">{exercise?.guidance}</p>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-shadow-purpleLight">Plan details</p>
-                    <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-shadow-textSecondary">
-                      {todayScheduledWorkout?.fallbackText || 'This workout references another scheduled day. Open the saved plan for its full exercise details.'}
-                    </p>
+                  <div className="rounded-xl border border-shadow-gold/30 bg-shadow-gold/5 p-4 text-sm leading-6 text-shadow-textSecondary">
+                    Workout plan found, but exercises could not be parsed.
                   </div>
                 )}
               </>
+            ) : null}
+            {todayScheduledWorkout?.fallbackText ? (
+              <div className="min-w-0 overflow-hidden rounded-xl border border-shadow-border bg-black/20">
+                <button
+                  aria-expanded={planDetailsOpen}
+                  className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-shadow-text transition hover:bg-shadow-purple/10 hover:text-shadow-purpleLight"
+                  onClick={() => setPlanDetailsOpen((current) => !current)}
+                  type="button"
+                >
+                  <span>{planDetailsOpen ? 'Hide full plan details' : 'View full plan details'}</span>
+                  <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${planDetailsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+                {planDetailsOpen ? (
+                  <div className="border-t border-shadow-border px-4 py-4">
+                    <p className="whitespace-pre-wrap break-words text-sm leading-6 text-shadow-textSecondary">
+                      {todayScheduledWorkout?.fallbackText}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
